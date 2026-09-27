@@ -1,0 +1,33 @@
+<section class="page" id="page-panduan" hidden>
+  <div class="page-head">
+    <div>
+      <h1>Panduan &amp; FAQ</h1>
+      <p class="sub">Cara pakai KasirWarung AI dalam 5 menit.</p>
+    </div>
+  </div>
+
+  <div class="grid g3">
+    <div class="card tint-orange feature"><div class="f-ic ic-orange"><i data-icon="cart"></i></div><div><h3>1. Jualan</h3><p class="small mb0">Menu <b>Kasir</b> → ketik nama / scan barcode → Enter → <b>Bayar</b>. Harga paket & grosir otomatis.</p></div></div>
+    <div class="card tint-yellow feature"><div class="f-ic ic-yellow"><i data-icon="truck"></i></div><div><h3>2. Kulakan</h3><p class="small mb0">Menu <b>Stok Masuk</b> → tambah barang, isi harga beli. Harga modal rata-rata dihitung sendiri.</p></div></div>
+    <div class="card tint-green feature"><div class="f-ic ic-green"><i data-icon="book"></i></div><div><h3>3. Kasbon</h3><p class="small mb0">Pilih metode <b>Kasbon</b> saat bayar. Tagih lewat tombol <b>Tagih WA</b> di menu Pelanggan &amp; Kasbon.</p></div></div>
+  </div>
+
+  <h2 class="mt2">Pertanyaan yang sering ditanyakan</h2>
+  <details class="faq"><summary>Bagaimana cara memakai scanner barcode?</summary><div class="faq-body">Colokkan scanner USB/Bluetooth (mode keyboard) ke HP/laptop. Buka menu Kasir, pastikan kursor ada di kolom cari, lalu scan. Scanner mengetik angka barcode dan menekan Enter — barang langsung masuk keranjang.</div></details>
+  <details class="faq"><summary>Bagaimana harga paket dan grosir bekerja?</summary><div class="faq-body">Setiap produk punya harga eceran, harga paket (mulai jumlah tertentu) dan harga grosir (mulai jumlah lebih besar). Semua harga dihitung <b>per satuan</b>. Contoh Indomie: eceran Rp 3.500, paket ≥5 Rp 3.300, grosir ≥40 Rp 3.150. Saat jumlah di keranjang mencapai batas, kasir otomatis memakai harga termurah.</div></details>
+  <details class="faq"><summary>Pelanggan mau kasbon, apa yang harus saya lakukan?</summary><div class="faq-body">Di layar Bayar pilih <b>Kasbon</b>, pilih pelanggan, isi uang muka bila ada, lalu Selesaikan. Aplikasi mengecek limit kasbon pelanggan. Limit hanya bisa diatur Owner di menu Pelanggan &amp; Kasbon → ikon ubah. Limit Rp 0 berarti pelanggan tidak boleh kasbon.</div></details>
+  <details class="faq"><summary>Pelanggan bayar kasbon sebagian (cicil)?</summary><div class="faq-body">Buka Pelanggan &amp; Kasbon → <b>Bayar</b> → isi jumlah. Pembayaran otomatis melunasi kasbon paling lama dulu. Status berubah menjadi <b>Cicil</b> atau <b>Lunas</b>, dan bukti bayar bisa dicetak atau dikirim ke WhatsApp.</div></details>
+  <details class="faq"><summary>Apa arti warna tag kasbon?</summary><div class="faq-body"><span class="badge b-red">Merah</span> sudah lewat jatuh tempo, <span class="badge b-yellow">Kuning</span> jatuh tempo dalam 3 hari, <span class="badge b-green">Hijau</span> masih aman. Jatuh tempo default 14 hari (bisa diubah di Pengaturan).</div></details>
+  <details class="faq"><summary>Bagaimana cara tutup kasir (closing) di malam hari?</summary><div class="faq-body">Menu Kasir → <b>Tutup Kasir</b>. Aplikasi menghitung uang tunai yang seharusnya ada (penjualan tunai + DP kasbon + pembayaran kasbon tunai). Isi modal awal dan uang yang benar-benar ada di laci — selisihnya langsung terlihat dan tercatat.</div></details>
+  <details class="faq"><summary>Bagaimana mencetak struk 58 mm?</summary><div class="faq-body">Setelah transaksi tekan <b>Cetak struk</b>. Di Android, pakai aplikasi printer thermal Bluetooth yang mendukung "Print Service" (mis. RawBT) lalu pilih ukuran kertas 58 mm. Di laptop, pilih printer thermal dan atur margin "None". Struk juga bisa dikirim lewat WhatsApp.</div></details>
+  <details class="faq"><summary>Apakah aplikasi tetap jalan tanpa AI?</summary><div class="faq-body">Ya, 100%. AI hanya bonus: <b>Saran Kulakan</b>, <b>Pesan Tagih Halus</b> dan <b>Cerita Omzet Hari Ini</b>. Bila AI dimatikan atau tidak tersambung, tombol yang sama memakai rumus/template otomatis dan menampilkan badge <span class="badge b-noai">AI tidak aktif</span>.</div></details>
+  <details class="faq"><summary>Apa bedanya Owner dan Kasir?</summary><div class="faq-body"><b>Owner</b>: semua menu termasuk laporan, laba, stok masuk, pengaturan, backup. <b>Kasir</b>: jualan, pelanggan &amp; kasbon (tanpa mengubah limit), melihat stok & harga (tanpa harga modal). Pembatasan dicek di server, bukan hanya di menu.</div></details>
+  <details class="faq"><summary>Lupa password?</summary><div class="faq-body">Kasir: minta Owner mereset di Pengaturan → Pengguna. Owner: minta bantuan penjual aplikasi, atau buka editor Apps Script lalu tanyakan cara reset lewat dukungan WhatsApp. Setelah 5 kali salah, login dikunci 15 menit.</div></details>
+  <details class="faq"><summary>Bagaimana impor 300 barang sekaligus?</summary><div class="faq-body">Menu Produk → <b>Impor CSV</b> → <b>Unduh template 300</b>. Edit di Excel/Google Sheets (harga, stok, hapus yang tidak dijual), simpan sebagai CSV, lalu pilih file dan tekan Impor. Barang dengan barcode/nama yang sama diperbarui, bukan diduplikasi.</div></details>
+  <details class="faq"><summary>Data saya disimpan di mana? Bagaimana backup?</summary><div class="faq-body">Semua data ada di Google Sheets <b>DB_KasirWarung</b> milik Anda sendiri. Owner bisa backup manual atau aktifkan backup otomatis harian di Pengaturan → Data &amp; Backup (disimpan 30 salinan di Google Drive).</div></details>
+  <details class="faq"><summary>Sesi login berapa lama?</summary><div class="faq-body">8 jam sejak login. Setelah itu aplikasi meminta login ulang agar HP yang tertinggal tidak bisa dipakai orang lain.</div></details>
+  <details class="faq"><summary>Aplikasi terasa lambat?</summary><div class="faq-body">Pastikan sinyal stabil. Daftar barang disimpan di HP sehingga pencarian instan; penyimpanan transaksi butuh 1–3 detik. Tekan tombol muat ulang di Kasir bila stok terlihat berbeda dengan kasir lain.</div></details>
+</section>
+<script>
+Pages.panduan = { enter() {} };
+</script>

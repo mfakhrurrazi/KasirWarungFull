@@ -1,0 +1,522 @@
+<section class="page" id="page-kasir" hidden>
+  <div class="page-head">
+    <div>
+      <h1>Kasir</h1>
+      <p class="sub hide-phone">Ketik nama atau scan barcode lalu Enter · <span class="kbd">F2</span> cari · <span class="kbd">F9</span> bayar</p>
+    </div>
+    <div class="actions">
+      <button class="btn btn-sm" id="posHistory"><i data-icon="receipt"></i>Riwayat</button>
+      <button class="btn btn-sm btn-yellow" id="posClosing"><i data-icon="cash"></i>Tutup Kasir</button>
+    </div>
+  </div>
+
+  <div class="pos">
+    <div class="pos-left">
+      <div class="pos-toolbar">
+        <div class="search">
+          <i data-icon="search"></i>
+          <input id="posSearch" type="search" placeholder="Cari barang atau scan barcode…" autocomplete="off" autocapitalize="none" spellcheck="false" enterkeyhint="done" aria-label="Cari barang">
+        </div>
+        <button class="btn icon-btn" id="posReload" aria-label="Muat ulang produk"><i data-icon="refresh"></i></button>
+      </div>
+      <div class="chips" id="posCats"></div>
+      <div class="prod-grid" id="posGrid"></div>
+      <div class="text-center mt1" id="posMore"></div>
+    </div>
+
+    <aside class="card pos-cart" id="posCart" aria-label="Keranjang">
+      <div class="card-head">
+        <h2>Keranjang <span class="badge b-orange" id="cartCount">0</span></h2>
+        <div class="actions">
+          <button class="btn btn-sm btn-ghost" id="cartClear">Kosongkan</button>
+          <button class="btn icon-btn close-cart" id="cartClose" aria-label="Tutup keranjang"><i data-icon="x"></i></button>
+        </div>
+      </div>
+      <div id="cartCustomer" class="mb0"></div>
+      <ul class="cart-list" id="cartList"></ul>
+      <div id="cartSummary"></div>
+      <button class="btn btn-primary btn-block btn-lg" id="cartPay" disabled><i data-icon="wallet"></i>Bayar</button>
+    </aside>
+  </div>
+
+  <div class="cart-bar" id="cartBar">
+    <button class="btn btn-primary" id="cartBarBtn" type="button">
+      <span><i data-icon="cart"></i> <span class="cb-count" id="cbCount">0 barang</span></span>
+      <span id="cbTotal">Rp 0 · Bayar</span>
+    </button>
+  </div>
+</section>
+<script>
+Pages.kasir = {
+  products: [], byId: {}, byBarcode: {}, cart: [], customer: null, cat: 'Semua', limit: 60, lastSale: null,
+
+  init() {
+    const search = $('#posSearch');
+    search.addEventListener('input', debounce(() => { this.limit = 60; this.renderGrid(); }, 90));
+    search.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); this.onEnter(); }
+      if (e.key === 'Escape') { search.value = ''; this.renderGrid(); }
+    });
+    $('#posGrid').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-add]');
+      if (b) { this.add(b.getAttribute('data-add'), 1, b); }
+    });
+    $('#posCats').addEventListener('click', (e) => {
+      const c = e.target.closest('[data-cat]');
+      if (!c) return;
+      this.cat = c.getAttribute('data-cat');
+      this.limit = 60;
+      this.renderCats(); this.renderGrid();
+    });
+    $('#posMore').addEventListener('click', (e) => { if (e.target.closest('button')) { this.limit += 120; this.renderGrid(); } });
+    $('#cartList').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-step],[data-del]');
+      if (!b) return;
+      const id = b.getAttribute('data-id');
+      if (b.hasAttribute('data-del')) this.remove(id);
+      else this.changeQty(id, Number(b.getAttribute('data-step')));
+    });
+    $('#cartList').addEventListener('change', (e) => {
+      const i = e.target.closest('input[data-qty]');
+      if (i) this.setQty(i.getAttribute('data-qty'), parseNum(i.value));
+    });
+    $('#cartCustomer').addEventListener('click', (e) => {
+      if (e.target.closest('[data-clear-cust]')) { this.customer = null; this.save(); this.renderCart(); return; }
+      if (e.target.closest('[data-pick-cust]')) this.pickCustomer().then((c) => { if (c) { this.customer = c; this.save(); this.renderCart(); } });
+    });
+    $('#cartClear').addEventListener('click', async () => {
+      if (!this.cart.length) return;
+      if (await confirmBox({ title: 'Kosongkan keranjang?', message: 'Semua barang di keranjang akan dihapus.', okText: 'Kosongkan', danger: true })) {
+        this.cart = []; this.customer = null; this.save(); this.renderCart(); this.renderGrid();
+      }
+    });
+    $('#cartPay').addEventListener('click', () => this.openPay());
+    $('#cartBarBtn').addEventListener('click', () => this.toggleCart(true));
+    $('#cartClose').addEventListener('click', () => this.toggleCart(false));
+    $('#posReload').addEventListener('click', () => this.loadProducts(true));
+    $('#posHistory').addEventListener('click', () => this.history());
+    $('#posClosing').addEventListener('click', () => this.closing());
+    document.addEventListener('keydown', (e) => {
+      if (App.page !== 'kasir' || $('#modalRoot').children.length) return;
+      if (e.key === 'F2') { e.preventDefault(); $('#posSearch').focus(); }
+      if (e.key === 'F9') { e.preventDefault(); this.openPay(); }
+    });
+  },
+
+  async enter() {
+    const saved = Store.get('cart', null);
+    if (saved && Array.isArray(saved.items) && !this.cart.length) { this.cart = saved.items; this.customer = saved.customer || null; }
+    await this.loadProducts(false);
+    if (window.innerWidth >= 768) setTimeout(() => $('#posSearch').focus(), 100);
+  },
+
+  async loadProducts(force) {
+    if (!this.products.length) $('#posGrid').innerHTML = [1, 2, 3, 4, 5, 6].map(() => '<div class="prod">' + skeleton(3) + '</div>').join('');
+    try {
+      const list = await App.loadProducts(force || !this.products.length);
+      this.setProducts(list);
+      if (force) toast('Daftar barang diperbarui', 'ok');
+    } catch (e) {
+      $('#posGrid').innerHTML = '<div class="notice n-err">' + esc(e.message) + '</div>';
+    }
+  },
+
+  setProducts(list) {
+    this.products = list.filter((p) => p.active);
+    this.byId = {}; this.byBarcode = {};
+    this.products.forEach((p) => {
+      this.byId[p.product_id] = p;
+      if (p.barcode) this.byBarcode[p.barcode] = p;
+      p._s = (p.name + ' ' + p.barcode + ' ' + p.category).toLowerCase();
+    });
+    this.cart = this.cart.filter((c) => this.byId[c.product_id]);
+    this.renderCats(); this.renderGrid(); this.renderCart();
+  },
+
+  save() { Store.set('cart', { items: this.cart, customer: this.customer }); },
+
+  renderCats() {
+    const cats = ['Semua'].concat((App.boot.categories || ['Sembako', 'Minuman', 'Rokok', 'Snack', 'Toiletries', 'Gas & Air', 'Lainnya']));
+    $('#posCats').innerHTML = cats.map((c) => '<button class="chip ' + (c === this.cat ? 'active' : '') + '" data-cat="' + esc(c) + '">' + esc(c) + '</button>').join('');
+  },
+
+  filtered() {
+    const q = $('#posSearch').value.trim().toLowerCase();
+    const tokens = q ? q.split(/\s+/) : [];
+    return this.products.filter((p) => (this.cat === 'Semua' || p.category === this.cat) && tokens.every((t) => p._s.indexOf(t) >= 0));
+  },
+
+  renderGrid() {
+    const list = this.filtered();
+    const inCart = {};
+    this.cart.forEach((c) => { inCart[c.product_id] = c.qty; });
+    if (!list.length) {
+      $('#posGrid').innerHTML = '<div style="grid-column:1/-1">' + emptyState('box', 'Barang tidak ditemukan', this.products.length ? 'Coba kata lain, atau cek ejaan nama barang.' : 'Belum ada produk. Owner bisa menambah di menu Produk.') + '</div>';
+      $('#posMore').innerHTML = '';
+      return;
+    }
+    $('#posGrid').innerHTML = list.slice(0, this.limit).map((p) => {
+      const out = p.stock <= 0;
+      const low = !out && p.stock <= p.min_stock;
+      return '<button class="prod ' + (out ? 'out' : '') + '" data-add="' + esc(p.product_id) + '" type="button">' +
+        '<span class="p-cat" style="background:' + (CAT_COLORS[p.category] || '#999') + '"></span>' +
+        (inCart[p.product_id] ? '<span class="p-incart">' + esc(fmtNum(inCart[p.product_id])) + '</span>' : '') +
+        '<span class="p-name">' + esc(p.name) + '</span>' +
+        '<span class="price-tag sm">' + esc(rp(p.price_retail)) + '</span>' +
+        '<span class="p-meta"><span>/' + esc(p.unit) + '</span><span class="' + (out ? 'badge b-red' : (low ? 'badge b-yellow' : '')) + '">' + (out ? 'Habis' : 'Stok ' + esc(fmtNum(p.stock))) + '</span></span>' +
+        '</button>';
+    }).join('');
+    $('#posMore').innerHTML = list.length > this.limit ? '<button class="btn btn-sm">Tampilkan lebih banyak (' + (list.length - this.limit) + ')</button>' : '';
+  },
+
+  onEnter() {
+    const input = $('#posSearch');
+    const q = input.value.trim();
+    if (!q) return;
+    let p = this.byBarcode[q];
+    if (!p) {
+      const list = this.filtered();
+      if (list.length === 1) p = list[0];
+    }
+    if (p) {
+      this.add(p.product_id, 1);
+      input.value = '';
+      this.renderGrid();
+      input.focus();
+    } else toast('Barang "' + q + '" tidak ditemukan', 'err');
+  },
+
+  add(id, qty, el) {
+    const p = this.byId[id];
+    if (!p) return;
+    const line = this.cart.find((c) => c.product_id === id);
+    const next = (line ? line.qty : 0) + qty;
+    if (next > p.stock) { toast('Stok ' + p.name + ' tinggal ' + fmtNum(p.stock) + ' ' + p.unit, 'err'); return; }
+    if (line) line.qty = Math.round(next * 100) / 100;
+    else this.cart.push({ product_id: id, qty: qty });
+    if (el) { el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); }
+    this.save();
+    this.renderCart(id);
+    this.renderGrid();
+    if (navigator.vibrate) try { navigator.vibrate(15); } catch (e) { /* ignore */ }
+  },
+
+  changeQty(id, delta) {
+    const line = this.cart.find((c) => c.product_id === id);
+    if (!line) return;
+    const next = Math.round((line.qty + delta) * 100) / 100;
+    if (next <= 0) { this.remove(id); return; }
+    this.setQty(id, next);
+  },
+
+  setQty(id, qty) {
+    const p = this.byId[id];
+    const line = this.cart.find((c) => c.product_id === id);
+    if (!p || !line) return;
+    if (!(qty > 0)) { this.remove(id); return; }
+    if (isWholeUnit(p.unit)) qty = Math.round(qty);
+    if (qty > p.stock) { toast('Stok ' + p.name + ' tinggal ' + fmtNum(p.stock) + ' ' + p.unit, 'err'); qty = p.stock; }
+    line.qty = Math.max(isWholeUnit(p.unit) ? 1 : 0.1, qty);
+    this.save(); this.renderCart(); this.renderGrid();
+  },
+
+  remove(id) {
+    this.cart = this.cart.filter((c) => c.product_id !== id);
+    this.save(); this.renderCart(); this.renderGrid();
+  },
+
+  lines() {
+    return this.cart.map((c) => {
+      const p = this.byId[c.product_id];
+      const pr = unitPrice(p, c.qty);
+      return { p: p, qty: c.qty, price: pr.price, tier: pr.tier, total: Math.round(pr.price * c.qty) };
+    });
+  },
+
+  totals(discount) {
+    const lines = this.lines();
+    const subtotal = lines.reduce((a, l) => a + l.total, 0);
+    const d = Math.min(Math.max(0, discount || 0), subtotal);
+    const taxPct = Number(App.settings.TAX_PERCENT) || 0;
+    const tax = Math.round((subtotal - d) * taxPct / 100);
+    return { lines: lines, subtotal: subtotal, discount: d, tax: tax, taxPct: taxPct, total: subtotal - d + tax, count: lines.reduce((a, l) => a + (isWholeUnit(l.p.unit) ? l.qty : 1), 0) };
+  },
+
+  tierHint(p, qty) {
+    const hints = [];
+    if (p.bundle_qty > 0 && p.price_bundle > 0 && qty < p.bundle_qty) hints.push('Beli ' + fmtNum(p.bundle_qty) + ' → ' + rp(p.price_bundle) + '/' + p.unit);
+    else if (p.wholesale_qty > 0 && p.price_wholesale > 0 && qty < p.wholesale_qty) hints.push('Beli ' + fmtNum(p.wholesale_qty) + ' → ' + rp(p.price_wholesale) + '/' + p.unit);
+    return hints.join(' · ');
+  },
+
+  renderCart(bumpId) {
+    const t = this.totals(0);
+    $('#cartCustomer').innerHTML = this.customer
+      ? '<div class="notice n-info" style="align-items:center">' + icon('user') + '<div style="flex:1"><b>' + esc(this.customer.name) + '</b><div class="small">Sisa kasbon ' + esc(rp(this.customer.outstanding || 0)) + '</div></div><button class="btn btn-sm btn-ghost" data-clear-cust>Hapus</button></div>'
+      : '<button class="btn btn-sm btn-ghost" data-pick-cust>' + icon('user') + 'Pilih pelanggan (opsional)</button>';
+    if (!this.cart.length) {
+      $('#cartList').innerHTML = '<li>' + emptyState('cart', 'Keranjang kosong', 'Ketuk barang atau scan barcode untuk menambah.') + '</li>';
+    } else {
+      $('#cartList').innerHTML = t.lines.map((l) => {
+        const p = l.p;
+        const hint = this.tierHint(p, l.qty);
+        return '<li class="cart-item' + (bumpId === p.product_id ? ' bump' : '') + '">' +
+          '<div><div class="ci-name">' + esc(p.name) + '</div><div class="ci-price"><span class="price-tag sm' + (l.tier !== 'Eceran' ? ' green' : '') + '">' + esc(rp(l.price)) + '</span>/' + esc(p.unit) +
+          (l.tier !== 'Eceran' ? ' <span class="badge b-green">Harga ' + esc(l.tier) + '</span>' : '') + '</div>' +
+          (hint ? '<div class="small muted">' + esc(hint) + '</div>' : '') + '</div>' +
+          '<div class="ci-total">' + esc(rp(l.total)) + '</div>' +
+          '<div class="stepper"><button type="button" data-step="-1" data-id="' + esc(p.product_id) + '" aria-label="Kurangi">−</button>' +
+          '<input data-qty="' + esc(p.product_id) + '" value="' + esc(fmtNum(l.qty)) + '" inputmode="decimal" aria-label="Jumlah ' + esc(p.name) + '">' +
+          '<button type="button" data-step="1" data-id="' + esc(p.product_id) + '" aria-label="Tambah">+</button></div>' +
+          '<div class="text-right"><button class="btn btn-sm btn-ghost" data-del data-id="' + esc(p.product_id) + '" aria-label="Hapus">' + icon('trash') + '</button></div></li>';
+      }).join('');
+    }
+    $('#cartSummary').innerHTML = '<div class="cart-total"><span>Total</span><span class="num">' + esc(rp(t.subtotal)) + '</span></div>' +
+      (t.taxPct ? '<div class="small muted text-right" style="margin-top:-8px">+ pajak ' + t.taxPct + '% saat bayar</div>' : '');
+    $('#cartCount').textContent = this.cart.length;
+    $('#cartPay').disabled = !this.cart.length;
+    $('#cbCount').textContent = this.cart.length + ' barang';
+    $('#cbTotal').textContent = rp(t.subtotal) + ' · Bayar';
+    $('#cartBar').classList.toggle('show', this.cart.length > 0 && !$('#posCart').classList.contains('open'));
+    if (bumpId) { const c = $('#cbCount'); c.classList.remove('bump'); void c.offsetWidth; c.classList.add('bump'); }
+  },
+
+  toggleCart(open) {
+    $('#posCart').classList.toggle('open', open);
+    $('#cartBar').classList.toggle('show', !open && this.cart.length > 0);
+  },
+
+  /* ---------- Customer picker ---------- */
+  pickCustomer(opts) {
+    opts = opts || {};
+    return new Promise(async (resolve) => {
+      let picked = null;
+      const m = openModal({
+        title: 'Pilih pelanggan',
+        body: '<div class="search"><i data-icon="search"></i><input id="pcSearch" placeholder="Cari nama atau nomor HP" autocomplete="off"></div><div id="pcList" class="mt1">' + skeleton(4) + '</div>' +
+          '<div class="divider"></div><h3>Pelanggan baru</h3><div class="row"><input id="pcName" placeholder="Nama (mis. Bu Ani)" maxlength="60"><input id="pcPhone" placeholder="No. HP (opsional)" inputmode="tel" maxlength="20"></div>' +
+          '<button class="btn btn-green btn-block mt1" id="pcAdd">' + icon('plus') + 'Simpan pelanggan baru</button>',
+        onClose: () => resolve(picked)
+      });
+      hydrateIcons(m.el);
+      let list = [];
+      const render = () => {
+        const q = $('#pcSearch', m.el).value.trim().toLowerCase();
+        const rows = list.filter((c) => !q || (c.name + ' ' + c.phone).toLowerCase().indexOf(q) >= 0).slice(0, 80);
+        $('#pcList', m.el).innerHTML = rows.length ? '<ul class="list">' + rows.map((c) => {
+          const left = c.credit_limit - c.outstanding;
+          return '<li><span class="avatar" style="background:' + avatarColor(c.name) + '">' + esc(initials(c.name)) + '</span><div class="li-main"><div class="li-title">' + esc(c.name) + '</div>' +
+            '<div class="li-sub">Kasbon ' + esc(rp(c.outstanding)) + ' · ' + (c.credit_limit > 0 ? 'sisa limit ' + esc(rp(Math.max(0, left))) : 'tanpa kasbon') + '</div></div>' +
+            '<button class="btn btn-sm btn-primary" data-pick="' + esc(c.customer_id) + '">Pilih</button></li>';
+        }).join('') + '</ul>' : emptyState('book', 'Belum ada pelanggan', 'Tambahkan pelanggan baru di bawah.');
+      };
+      $('#pcSearch', m.el).addEventListener('input', debounce(render, 80));
+      $('#pcList', m.el).addEventListener('click', (e) => {
+        const b = e.target.closest('[data-pick]');
+        if (!b) return;
+        picked = list.find((c) => c.customer_id === b.getAttribute('data-pick'));
+        m.close();
+      });
+      $('#pcAdd', m.el).addEventListener('click', async () => {
+        const name = $('#pcName', m.el).value.trim();
+        if (!name) { toast('Isi nama pelanggan', 'err'); return; }
+        try {
+          const r = await withBusy('Menyimpan…', () => api('apiSaveCustomer', { name: name, phone: $('#pcPhone', m.el).value, credit_limit: 0 }));
+          list = await App.loadCustomers(true);
+          picked = list.find((c) => c.customer_id === r.customer_id);
+          toast('Pelanggan ditambahkan' + (App.can('credit.admin') ? '' : ' (limit kasbon diatur Owner)'), 'ok');
+          m.close();
+        } catch (e) { /* toast shown */ }
+      });
+      try { list = await App.loadCustomers(false); render(); } catch (e) { $('#pcList', m.el).innerHTML = '<div class="notice n-err">' + esc(e.message) + '</div>'; }
+    });
+  },
+
+  /* ---------- Payment ---------- */
+  openPay() {
+    if (!this.cart.length) return;
+    let method = this.customer && this.customer.credit_limit > 0 ? 'Tunai' : 'Tunai';
+    const methods = [['Tunai', 'cash'], ['QRIS', 'qr'], ['Transfer', 'bank'], ['Kasbon', 'book']];
+    const m = openModal({
+      title: 'Pembayaran',
+      body: '<div class="pay-sticky"><div class="big-total num" id="payTotal"></div><div class="text-center small muted mb0" id="payBreak"></div></div><div class="divider"></div>' +
+        '<div class="pay-methods">' + methods.map((x) => '<button type="button" data-m="' + x[0] + '">' + icon(x[1]) + x[0] + '</button>').join('') + '</div>' +
+        '<label class="field"><span>Diskon (Rp)</span><input id="payDisc" inputmode="numeric" placeholder="0"></label>' +
+        '<div id="payCash"><label class="field"><span>Uang diterima</span><input id="payPaid" inputmode="numeric" placeholder="0" style="font-size:1.3rem;font-weight:900"></label><div class="quick-cash" id="payQuick"></div>' +
+        '<div class="notice n-ok" id="payChangeBox" style="justify-content:space-between;align-items:center"><b>Kembalian</b><b class="num" id="payChange" style="font-size:1.3rem">Rp 0</b></div></div>' +
+        '<div id="payNonCash" hidden><div class="notice n-info">' + icon('alert') + '<span>Pastikan dana sudah masuk ke rekening / aplikasi QRIS sebelum menekan Selesai.</span></div></div>' +
+        '<div id="payKasbon" hidden><div id="payCust"></div><label class="field"><span>Uang muka / DP (opsional)</span><input id="payDp" inputmode="numeric" placeholder="0"></label><div id="payLimit"></div></div>',
+      foot: '<button class="btn" data-close>Batal</button><button class="btn btn-green btn-lg" id="payDo">' + icon('check') + 'Selesaikan</button>',
+      noFocus: true
+    });
+    const el = m.el;
+    const val = (id) => parseNum($(id, el).value);
+    const fmtInput = (inp) => { const n = parseNum(inp.value); inp.value = n ? fmtNum(n) : ''; };
+    ['#payDisc', '#payPaid', '#payDp'].forEach((id) => $(id, el).addEventListener('blur', (e) => fmtInput(e.target)));
+
+    const update = () => {
+      const t = this.totals(val('#payDisc'));
+      $('#payTotal', el).textContent = rp(t.total);
+      $('#payBreak', el).textContent = t.lines.length + ' baris · subtotal ' + rp(t.subtotal) + (t.discount ? ' · diskon ' + rp(t.discount) : '') + (t.tax ? ' · pajak ' + rp(t.tax) : '');
+      $$('.pay-methods button', el).forEach((b) => b.classList.toggle('on', b.getAttribute('data-m') === method));
+      $('#payCash', el).hidden = method !== 'Tunai';
+      $('#payNonCash', el).hidden = !(method === 'QRIS' || method === 'Transfer');
+      $('#payKasbon', el).hidden = method !== 'Kasbon';
+      if (method === 'Tunai') {
+        const opts = [t.total];
+        [5000, 10000, 20000, 50000, 100000].forEach((d) => { const v = Math.ceil(t.total / d) * d; if (v > t.total && opts.indexOf(v) < 0 && opts.length < 5) opts.push(v); });
+        $('#payQuick', el).innerHTML = opts.map((v, i) => '<button type="button" class="chip" data-cash="' + v + '">' + (i === 0 ? 'Uang pas' : esc(rp(v))) + '</button>').join('');
+        const change = val('#payPaid') - t.total;
+        $('#payChange', el).textContent = rp(Math.max(0, change));
+        $('#payChangeBox', el).className = 'notice ' + (change >= 0 ? 'n-ok' : 'n-err');
+        $('#payChangeBox b', el).textContent = change >= 0 ? 'Kembalian' : 'Kurang';
+        if (change < 0) $('#payChange', el).textContent = rp(-change);
+      }
+      if (method === 'Kasbon') {
+        const c = this.customer;
+        $('#payCust', el).innerHTML = c
+          ? '<div class="notice n-info" style="align-items:center">' + icon('user') + '<div style="flex:1"><b>' + esc(c.name) + '</b></div><button type="button" class="btn btn-sm" id="payChangeCust">Ganti</button></div>'
+          : '<button type="button" class="btn btn-primary btn-block" id="payChangeCust">' + icon('user') + 'Pilih pelanggan kasbon</button>';
+        if (c) {
+          const credit = Math.max(0, t.total - val('#payDp'));
+          const left = c.credit_limit - c.outstanding;
+          const over = c.credit_limit <= 0 || credit > left;
+          $('#payLimit', el).innerHTML = '<div class="notice ' + (over ? 'n-err' : 'n-ok') + '"><div>Limit ' + esc(rp(c.credit_limit)) + ' · sisa kasbon ' + esc(rp(c.outstanding)) +
+            '<br><b>Kasbon baru ' + esc(rp(credit)) + '</b> · sisa limit ' + esc(rp(Math.max(0, left))) +
+            (c.credit_limit <= 0 ? '<br>Pelanggan ini belum diberi limit kasbon.' : (over ? '<br>Melebihi limit — kurangi belanja atau tambah DP.' : '')) + '</div></div>';
+        } else $('#payLimit', el).innerHTML = '';
+      }
+    };
+
+    el.addEventListener('click', async (e) => {
+      const mb = e.target.closest('[data-m]');
+      if (mb) { method = mb.getAttribute('data-m'); update(); if (method === 'Tunai') setTimeout(() => $('#payPaid', el).focus(), 30); return; }
+      const cb = e.target.closest('[data-cash]');
+      if (cb) { $('#payPaid', el).value = fmtNum(Number(cb.getAttribute('data-cash'))); update(); return; }
+      if (e.target.closest('#payChangeCust')) {
+        const c = await this.pickCustomer();
+        if (c) { this.customer = c; this.save(); this.renderCart(); update(); }
+      }
+    });
+    ['#payDisc', '#payPaid', '#payDp'].forEach((id) => $(id, el).addEventListener('input', update));
+    $('#payPaid', el).addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('#payDo', el).click(); } });
+    $('#payDo', el).addEventListener('click', () => this.submit(m, method, val('#payDisc'), method === 'Tunai' ? val('#payPaid') : (method === 'Kasbon' ? val('#payDp') : 0)));
+    update();
+    setTimeout(() => $('#payPaid', el).focus(), 80);
+  },
+
+  async submit(modal, method, discount, paid) {
+    const t = this.totals(discount);
+    if (method === 'Tunai' && paid < t.total) { toast('Uang diterima kurang ' + rp(t.total - paid), 'err'); return; }
+    if (method === 'Kasbon' && !this.customer) { toast('Pilih pelanggan untuk kasbon', 'err'); return; }
+    const payload = {
+      items: this.cart.map((c) => ({ product_id: c.product_id, qty: c.qty })),
+      method: method, discount: t.discount, paid: paid,
+      customer_id: this.customer ? this.customer.customer_id : ''
+    };
+    const btn = $('#payDo', modal.el);
+    btn.disabled = true;
+    try {
+      const sale = await withBusy('Menyimpan transaksi…', () => api('apiCheckout', payload));
+      modal.close();
+      sale.items.forEach((i) => { const p = this.byId[i.product_id]; if (p) p.stock = Math.round((p.stock - i.qty) * 100) / 100; });
+      if (method === 'Kasbon') App.customers = null;
+      this.lastSale = sale;
+      this.cart = []; this.customer = null; this.save();
+      this.toggleCart(false);
+      this.renderCart(); this.renderGrid();
+      this.showSuccess(sale);
+    } catch (e) {
+      btn.disabled = false;
+      if (e.code === 'STOCK') this.loadProducts(true);
+    }
+  },
+
+  showSuccess(sale) {
+    const m = openModal({
+      title: 'Transaksi berhasil',
+      body: '<div class="success-burst"><div class="check">' + icon('check') + '</div>' +
+        (sale.method === 'Tunai' ? '<div class="muted">Kembalian</div><div class="change-amount num">' + esc(rp(sale.change)) + '</div>' : '<div class="big-total">' + esc(rp(sale.total)) + '</div><div class="muted">' + esc(sale.method) + '</div>') +
+        (sale.credit ? '<p class="notice n-info mt1" style="justify-content:center">Kasbon ' + esc(rp(sale.credit.amount)) + ' dicatat · jatuh tempo ' + esc(fmtDate(sale.credit.due_date)) + '</p>' : '') +
+        '<p class="muted small">' + esc(sale.trx_id) + ' · ' + esc(fmtDateTime(sale.datetime)) + '</p></div>' +
+        ((sale.lowStock || []).length ? '<div class="notice n-warn">' + icon('alert') + '<span><b>Stok menipis:</b> ' + sale.lowStock.slice(0, 5).map((l) => esc(l.name) + ' (' + esc(fmtNum(l.stock)) + ' ' + esc(l.unit) + ')').join(', ') + '</span></div>' : '') +
+        '<details><summary class="small muted" style="cursor:pointer">Lihat struk</summary><div class="receipt-preview mt1">' + receiptHtml(sale) + '</div></details>',
+      foot: '<button class="btn" id="sxPrint">' + icon('printer') + 'Cetak struk</button><button class="btn btn-wa" id="sxWa">' + icon('wa') + 'Kirim WA</button>' +
+        '<button class="btn btn-primary" data-close>' + icon('plus') + 'Transaksi baru</button>',
+      noFocus: true,
+      onClose: () => { if (window.innerWidth >= 768) setTimeout(() => $('#posSearch').focus(), 50); }
+    });
+    $('#sxPrint', m.el).addEventListener('click', () => printHtml(receiptHtml(sale)));
+    $('#sxWa', m.el).addEventListener('click', () => this.sendReceiptWa(sale));
+  },
+
+  async sendReceiptWa(sale) {
+    let phone = sale.customer && sale.customer.phone;
+    if (!phone) {
+      const v = await confirmBox({ title: 'Kirim struk via WhatsApp', message: 'Masukkan nomor WhatsApp pembeli.', okText: 'Buka WhatsApp', input: { label: 'Nomor HP', placeholder: '0812…' } });
+      if (!v || v === true) return;
+      phone = v;
+    }
+    openWa(phone, receiptText(sale));
+  },
+
+  async history() {
+    const m = openModal({ title: 'Transaksi hari ini', body: skeleton(5), wide: true, noFocus: true });
+    try {
+      const list = await api('apiRecentSales');
+      const body = $('.modal-body', m.el);
+      if (!list.length) { body.innerHTML = emptyState('cart', 'Belum ada transaksi hari ini', ''); return; }
+      const total = list.filter((s) => s.status !== 'Batal').reduce((a, s) => a + s.total, 0);
+      body.innerHTML = '<p><b>' + list.length + '</b> transaksi · total <b>' + esc(rp(total)) + '</b></p><table class="rtable"><thead><tr><th>Transaksi</th><th>Pelanggan</th><th>Metode</th><th class="n">Total</th><th></th></tr></thead><tbody>' +
+        list.map((s) => '<tr><td class="td-title">' + esc(fmtTime(s.datetime)) + ' · ' + esc(s.trx_id) + '</td><td data-label="Pelanggan">' + esc(s.customer_name || '-') + '</td>' +
+          '<td data-label="Metode"><span class="badge ' + (s.status === 'Batal' ? 'b-red' : 'b-gray') + '">' + esc(s.status === 'Batal' ? 'Batal' : s.method) + '</span></td><td class="n" data-label="Total">' + esc(rp(s.total)) + '</td>' +
+          '<td class="td-actions"><button class="btn btn-sm" data-reprint="' + esc(s.trx_id) + '">' + icon('printer') + 'Struk</button></td></tr>').join('') + '</tbody></table>';
+      body.addEventListener('click', async (e) => {
+        const b = e.target.closest('[data-reprint]');
+        if (!b) return;
+        try {
+          const sale = await withBusy('Memuat struk…', () => api('apiGetSale', b.getAttribute('data-reprint')));
+          printHtml(receiptHtml(sale));
+        } catch (err) { /* toast shown */ }
+      });
+    } catch (e) { $('.modal-body', m.el).innerHTML = '<div class="notice n-err">' + esc(e.message) + '</div>'; }
+  },
+
+  async closing() {
+    const m = openModal({ title: 'Tutup Kasir (closing harian)', body: skeleton(6), noFocus: true });
+    const body = $('.modal-body', m.el);
+    try {
+      const s = await api('apiClosingSummary', '');
+      const row = (l, v, strong) => '<li><div class="li-main">' + esc(l) + '</div><span class="num' + (strong ? '' : ' muted') + '">' + (strong ? '<b>' + esc(v) + '</b>' : esc(v)) + '</span></li>';
+      body.innerHTML = '<p class="muted small">Tanggal ' + esc(fmtDate(s.date)) + ' · ' + s.trx + ' transaksi' + (s.voidCount ? ' · ' + s.voidCount + ' dibatalkan' : '') + '</p>' +
+        '<ul class="list">' + row('Penjualan tunai', rp(s.cashSales)) + row('DP kasbon (tunai)', rp(s.kasbonDp)) + row('Bayar kasbon tunai', rp(s.payCash)) +
+        row('Total uang tunai sistem', rp(s.systemCash), true) + row('QRIS', rp(s.qris)) + row('Transfer', rp(s.transfer)) + row('Kasbon baru', rp(s.kasbonNew)) + row('Omzet hari ini', rp(s.omzet), true) + '</ul>' +
+        '<div class="divider"></div><div class="row"><label class="field"><span>Modal awal di laci</span><input id="clOpen" inputmode="numeric" placeholder="0"></label>' +
+        '<label class="field"><span>Uang di laci (dihitung)</span><input id="clCount" inputmode="numeric" placeholder="0" style="font-weight:900"></label></div>' +
+        '<div id="clDiff"></div><label class="field"><span>Catatan (opsional)</span><input id="clNote" maxlength="160" placeholder="Mis. uang receh ditukar"></label>' +
+        (s.closings.length ? '<h3 class="mt2">Closing sebelumnya hari ini</h3><ul class="list">' + s.closings.map((c) => '<li><div class="li-main"><div class="li-title">' + esc(fmtTime(c.at)) + ' · ' + esc(c.user) + '</div><div class="li-sub">Dihitung ' + esc(rp(c.counted)) + '</div></div><span class="badge ' + (c.diff === 0 ? 'b-green' : 'b-red') + '">Selisih ' + esc(rp(c.diff)) + '</span></li>').join('') + '</ul>' : '');
+      const foot = document.createElement('div');
+      foot.className = 'modal-foot';
+      foot.innerHTML = '<button class="btn" data-close>Tutup</button><button class="btn btn-green" id="clSave">' + icon('check') + 'Simpan closing</button>';
+      $('.modal', m.el).appendChild(foot);
+      const calc = () => {
+        const expected = parseNum($('#clOpen', body).value) + s.systemCash;
+        const counted = parseNum($('#clCount', body).value);
+        const diff = counted - expected;
+        $('#clDiff', body).innerHTML = '<div class="notice ' + (diff === 0 ? 'n-ok' : (diff > 0 ? 'n-info' : 'n-err')) + '" style="justify-content:space-between"><span>Seharusnya ' + esc(rp(expected)) + '</span><b>' +
+          (diff === 0 ? 'Pas 👍' : (diff > 0 ? 'Lebih ' + esc(rp(diff)) : 'Kurang ' + esc(rp(-diff)))) + '</b></div>';
+      };
+      ['#clOpen', '#clCount'].forEach((id) => $(id, body).addEventListener('input', calc));
+      calc();
+      $('#clSave', m.el).addEventListener('click', async () => {
+        if (!$('#clCount', body).value.trim()) { toast('Isi jumlah uang di laci', 'err'); return; }
+        try {
+          const r = await withBusy('Menyimpan closing…', () => api('apiSaveClosing', { opening_cash: parseNum($('#clOpen', body).value), counted_cash: parseNum($('#clCount', body).value), note: $('#clNote', body).value }));
+          m.close();
+          toast(r.diff === 0 ? 'Closing tersimpan. Uang pas 👍' : 'Closing tersimpan. Selisih ' + rp(r.diff), r.diff === 0 ? 'ok' : 'err');
+        } catch (e) { /* toast shown */ }
+      });
+    } catch (e) { body.innerHTML = '<div class="notice n-err">' + esc(e.message) + '</div>'; }
+  }
+};
+</script>

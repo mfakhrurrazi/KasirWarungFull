@@ -1,0 +1,36 @@
+<section class="page" id="page-privasi" hidden>
+  <div class="card legal" style="max-width:820px;margin:0 auto">
+    <h1>Kebijakan Privasi</h1>
+    <p class="muted small">KasirWarung AI · Made by Piyu · terakhir diperbarui 2026</p>
+    <h2>1. Data apa yang disimpan</h2>
+    <ul>
+      <li>Data usaha: nama warung, alamat, nomor WhatsApp dan logo.</li>
+      <li>Data barang, stok, harga modal dan penjualan.</li>
+      <li>Data pelanggan: nama, nomor HP, alamat, limit dan riwayat kasbon.</li>
+      <li>Akun pengguna: username, nama, peran, dan password dalam bentuk <i>hash</i> SHA-256 bergaram (password asli tidak pernah disimpan).</li>
+      <li>Log aktivitas dan log pemakaian AI (waktu, pengguna, fitur, status).</li>
+    </ul>
+    <h2>2. Di mana data disimpan</h2>
+    <p>Seluruh data tersimpan di spreadsheet <b>DB_KasirWarung</b> dan folder backup di Google Drive <b>milik akun Google pemilik warung</b>. Pembuat aplikasi tidak menerima salinan data Anda.</p>
+    <h2>3. Fitur AI</h2>
+    <p>Bila AI diaktifkan, ringkasan yang diperlukan (mis. nama barang dan jumlah terjual, atau nama pelanggan dan nominal kasbon untuk menyusun pesan tagih) dikirim ke server AI yang diatur pemilik di Script Properties. Kunci AI tidak pernah dikirim ke browser. AI dapat dimatikan kapan saja di Pengaturan; seluruh fitur tetap bekerja dengan template otomatis.</p>
+    <p>Endpoint AI bawaan memakai HTTP biasa. Untuk produksi disarankan memakai proxy HTTPS agar data terenkripsi saat dikirim.</p>
+    <h2>4. WhatsApp</h2>
+    <p>Tombol WhatsApp hanya membuka aplikasi WhatsApp di perangkat Anda dengan pesan yang sudah terisi (wa.me). Pesan dikirim oleh Anda sendiri; aplikasi tidak mengirim pesan otomatis.</p>
+    <h2>5. Keamanan</h2>
+    <ul>
+      <li>Login per pengguna dengan sesi 8 jam dan penguncian setelah 5 kali salah password.</li>
+      <li>Hak akses Owner/Kasir diperiksa di server untuk setiap permintaan.</li>
+      <li>Sheet Users dan Settings diproteksi; semua perubahan penting tercatat di log aktivitas.</li>
+    </ul>
+    <h2>6. Hak pelanggan warung</h2>
+    <p>Pelanggan dapat meminta pemilik warung memperbarui atau menghapus datanya. Pemilik warung bertanggung jawab atas data pelanggan yang dicatat sesuai UU No. 27 Tahun 2022 tentang Pelindungan Data Pribadi.</p>
+    <h2>7. Kontak</h2>
+    <p>Pertanyaan tentang privasi dapat disampaikan melalui dukungan WhatsApp yang tertera di bagian bawah aplikasi.</p>
+    <p class="small muted">Dokumen ini adalah templat umum dan bukan nasihat hukum.</p>
+    <p><a href="#" data-go="syarat">Baca Syarat Lisensi →</a></p>
+  </div>
+</section>
+<script>
+Pages.privasi = { enter() {} };
+</script>

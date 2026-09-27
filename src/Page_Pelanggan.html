@@ -1,0 +1,239 @@
+<section class="page" id="page-pelanggan" hidden>
+  <div class="page-head">
+    <div>
+      <h1>Pelanggan &amp; Kasbon</h1>
+      <p class="sub">Buku utang warung — rapi, sopan ditagih, tidak ada yang terlupa.</p>
+    </div>
+    <div class="actions">
+      <button class="btn btn-primary" id="cuAdd"><i data-icon="plus"></i>Pelanggan baru</button>
+    </div>
+  </div>
+
+  <div class="grid g3" id="cuKpis"></div>
+
+  <div class="tabs mt2" id="cuTabs">
+    <button data-tab="kasbon" class="on">Buku kasbon</button>
+    <button data-tab="semua">Semua pelanggan</button>
+  </div>
+  <div class="search mb0"><i data-icon="search"></i><input id="cuSearch" type="search" placeholder="Cari nama atau nomor HP…" autocomplete="off"></div>
+  <div class="grid g3 mt2" id="cuList"></div>
+</section>
+<script>
+Pages.pelanggan = {
+  list: [], tab: 'kasbon',
+  init() {
+    $('#cuTabs').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-tab]');
+      if (!b) return;
+      this.tab = b.getAttribute('data-tab');
+      $$('#cuTabs button').forEach((x) => x.classList.toggle('on', x === b));
+      this.render();
+    });
+    $('#cuSearch').addEventListener('input', debounce(() => this.render(), 100));
+    $('#cuAdd').addEventListener('click', () => this.editCustomer(null));
+    $('#cuList').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-act-c]');
+      if (!b) return;
+      const c = this.list.find((x) => x.customer_id === b.getAttribute('data-id'));
+      if (!c) return;
+      const a = b.getAttribute('data-act-c');
+      if (a === 'pay') this.pay(c);
+      else if (a === 'wa') this.remindTemplate(c);
+      else if (a === 'ai') this.remindAi(c);
+      else if (a === 'detail') this.detail(c);
+      else if (a === 'edit') this.editCustomer(c);
+    });
+  },
+  async enter() {
+    $('#cuList').innerHTML = [1, 2, 3].map(() => '<div class="card">' + skeleton(4) + '</div>').join('');
+    await this.load();
+  },
+  async load() {
+    try {
+      this.list = await App.loadCustomers(true);
+      this.render();
+    } catch (e) { $('#cuList').innerHTML = '<div class="notice n-err">' + esc(e.message) + '</div>'; }
+  },
+  tag(c) {
+    if (!c.outstanding) return '<span class="badge b-green">' + icon('check') + 'Tidak ada kasbon</span>';
+    if (c.days_overdue > 0) return '<span class="badge b-red">' + icon('alert') + 'Lewat ' + c.days_overdue + ' hari</span>';
+    if (c.days_overdue !== null && c.days_overdue >= -3) return '<span class="badge b-yellow">' + icon('clock') + (c.days_overdue === 0 ? 'Jatuh tempo hari ini' : 'Jatuh tempo ' + (-c.days_overdue) + ' hari lagi') + '</span>';
+    return '<span class="badge b-green">' + icon('check') + 'Aman · ' + esc(daysLabel(c.days_overdue)) + '</span>';
+  },
+  render() {
+    const withDebt = this.list.filter((c) => c.outstanding > 0);
+    const overdue = withDebt.filter((c) => c.days_overdue > 0);
+    const total = withDebt.reduce((a, c) => a + c.outstanding, 0);
+    $('#cuKpis').innerHTML =
+      '<div class="card kpi"><div class="k-icon ic-orange">' + icon('book') + '</div><div class="k-label">Total kasbon</div><div class="k-value num">' + esc(rp(total)) + '</div><div class="k-sub">' + withDebt.length + ' pelanggan</div></div>' +
+      '<div class="card kpi"><div class="k-icon ic-red">' + icon('alert') + '</div><div class="k-label">Lewat jatuh tempo</div><div class="k-value">' + overdue.length + '</div><div class="k-sub">' + esc(rp(overdue.reduce((a, c) => a + c.outstanding, 0))) + '</div></div>' +
+      '<div class="card kpi"><div class="k-icon ic-green">' + icon('users') + '</div><div class="k-label">Pelanggan terdaftar</div><div class="k-value">' + this.list.length + '</div><div class="k-sub">Tagih sopan lewat WhatsApp</div></div>';
+
+    const q = $('#cuSearch').value.trim().toLowerCase();
+    let rows = (this.tab === 'kasbon' ? withDebt : this.list).filter((c) => !q || (c.name + ' ' + c.phone + ' ' + c.address).toLowerCase().indexOf(q) >= 0);
+    rows = rows.slice().sort((a, b) => this.tab === 'kasbon'
+      ? ((b.days_overdue === null ? -999 : b.days_overdue) - (a.days_overdue === null ? -999 : a.days_overdue)) || (b.outstanding - a.outstanding)
+      : a.name.localeCompare(b.name));
+    if (!rows.length) {
+      $('#cuList').innerHTML = '<div class="card" style="grid-column:1/-1">' + (this.tab === 'kasbon' && !q
+        ? emptyState('book', 'Semua kasbon lunas 🎉', 'Tidak ada pelanggan yang punya utang saat ini.')
+        : emptyState('book', 'Pelanggan tidak ditemukan', 'Coba kata lain atau tambahkan pelanggan baru.')) + '</div>';
+      return;
+    }
+    const aiOn = App.settings.AI_ENABLED;
+    $('#cuList').innerHTML = rows.map((c) => {
+      const pct = c.credit_limit > 0 ? Math.min(100, Math.round(c.outstanding / c.credit_limit * 100)) : (c.outstanding > 0 ? 100 : 0);
+      return '<div class="card cust-card">' +
+        '<div class="cust-top"><span class="avatar" style="background:' + avatarColor(c.name) + '">' + esc(initials(c.name)) + '</span>' +
+        '<div style="flex:1;min-width:0"><div style="font-weight:900;overflow:hidden;text-overflow:ellipsis" class="nowrap">' + esc(c.name) + '</div><div class="small muted">' + esc(c.phone ? phoneLocal(c.phone) : 'Tanpa nomor HP') + '</div></div>' +
+        '<button class="btn btn-sm btn-ghost" data-act-c="edit" data-id="' + esc(c.customer_id) + '" aria-label="Ubah">' + icon('edit') + '</button></div>' +
+        '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px"><span class="muted small">Sisa kasbon</span><span class="num" style="font-size:1.3rem;font-weight:900;color:' + (c.outstanding ? 'var(--danger)' : 'var(--accent-700)') + '">' + esc(rp(c.outstanding)) + '</span></div>' +
+        '<div class="limit-bar"><i class="' + (pct >= 100 ? 'over' : (pct >= 75 ? 'warn' : '')) + '" style="width:' + pct + '%"></i></div>' +
+        '<div class="small muted">Limit ' + esc(rp(c.credit_limit)) + (c.last_reminder ? ' · diingatkan ' + esc(fmtDate(c.last_reminder)) : '') + '</div>' +
+        '<div>' + this.tag(c) + '</div>' +
+        '<div class="actions">' +
+        (c.outstanding ? '<button class="btn btn-sm btn-green" data-act-c="pay" data-id="' + esc(c.customer_id) + '">' + icon('wallet') + 'Bayar</button>' +
+          (c.phone ? '<button class="btn btn-sm btn-wa" data-act-c="wa" data-id="' + esc(c.customer_id) + '">' + icon('wa') + 'Tagih WA</button>' : '') +
+          (c.phone && aiOn ? '<button class="btn btn-sm btn-yellow" data-act-c="ai" data-id="' + esc(c.customer_id) + '">' + icon('sparkle') + 'Pesan halus</button>' : '') : '') +
+        '<button class="btn btn-sm" data-act-c="detail" data-id="' + esc(c.customer_id) + '">Detail</button></div></div>';
+    }).join('');
+  },
+
+  templateMessage(c) {
+    const biz = App.settings.BUSINESS_NAME || 'warung kami';
+    const when = c.days_overdue > 0 ? ' yang sudah lewat ' + c.days_overdue + ' hari dari jatuh tempo' : (c.oldest_due ? ' yang jatuh tempo ' + fmtDate(c.oldest_due) : '');
+    return 'Halo ' + c.name + ', semoga sehat selalu 🙏\nKami dari ' + biz + ' ingin mengingatkan catatan kasbon sebesar ' + rp(c.outstanding) + when +
+      '.\nKalau ada rezeki, boleh dibayar sebagian dulu ya. Terima kasih banyak atas kepercayaannya 😊';
+  },
+
+  /** One tap: template message straight to WhatsApp (no server/AI needed). */
+  remindTemplate(c) {
+    openWa(c.phone, this.templateMessage(c));
+    api('apiMarkReminded', c.customer_id).then(() => { c.last_reminder = todayStr() + 'T00:00:00'; this.render(); }).catch(() => {});
+  },
+
+  async remindAi(c) {
+    const m = openModal({
+      title: 'Pesan tagih halus',
+      body: '<div id="aiMsgBadge"></div><div class="notice n-info"><span class="spinner sm"></span><span>Menyusun pesan yang sopan untuk ' + esc(c.name) + '…</span></div>',
+      noFocus: true
+    });
+    const body = $('.modal-body', m.el);
+    let r;
+    try { r = await api('apiAiPesanTagih', c.customer_id); }
+    catch (e) { r = { source: 'template', message: this.templateMessage(c), note: e.message }; }
+    body.innerHTML = '<div class="card-head"><span class="small muted">Untuk ' + esc(c.name) + ' · ' + esc(rp(c.outstanding)) + '</span>' + aiBadge(r.source) + '</div>' +
+      '<textarea id="aiMsg" rows="7">' + esc(r.message) + '</textarea>' + (r.note ? '<p class="small muted">' + esc(r.note) + '</p>' : '') +
+      '<p class="small muted">Boleh diedit sebelum dikirim.</p>';
+    const foot = document.createElement('div');
+    foot.className = 'modal-foot';
+    foot.innerHTML = '<button class="btn" data-close>Batal</button><button class="btn btn-wa" id="aiSend">' + icon('wa') + 'Kirim via WhatsApp</button>';
+    $('.modal', m.el).appendChild(foot);
+    $('#aiSend', m.el).addEventListener('click', () => {
+      openWa(c.phone, $('#aiMsg', m.el).value);
+      api('apiMarkReminded', c.customer_id).then(() => { c.last_reminder = todayStr() + 'T00:00:00'; this.render(); }).catch(() => {});
+      m.close();
+    });
+  },
+
+  pay(c) {
+    const m = openModal({
+      title: 'Bayar kasbon · ' + c.name,
+      body: '<div class="big-total num">' + esc(rp(c.outstanding)) + '</div><p class="text-center muted small">Sisa kasbon saat ini</p>' +
+        '<label class="field"><span>Jumlah dibayar</span><input id="kpAmt" inputmode="numeric" value="' + esc(fmtNum(c.outstanding)) + '" style="font-size:1.3rem;font-weight:900"></label>' +
+        '<div class="quick-cash"><button class="chip" data-amt="' + c.outstanding + '">Lunas</button>' +
+        [0.5].map((f) => '<button class="chip" data-amt="' + Math.round(c.outstanding * f / 1000) * 1000 + '">Separuh</button>').join('') +
+        [20000, 50000, 100000].filter((v) => v < c.outstanding).map((v) => '<button class="chip" data-amt="' + v + '">' + esc(rp(v)) + '</button>').join('') + '</div>' +
+        '<div class="pay-methods" style="grid-template-columns:repeat(3,1fr)">' + [['Tunai', 'cash'], ['QRIS', 'qr'], ['Transfer', 'bank']].map((x, i) => '<button type="button" data-pm="' + x[0] + '"' + (i === 0 ? ' class="on"' : '') + '>' + icon(x[1]) + x[0] + '</button>').join('') + '</div>' +
+        '<label class="field"><span>Catatan (opsional)</span><input id="kpNote" maxlength="120"></label><div id="kpRest"></div>',
+      foot: '<button class="btn" data-close>Batal</button><button class="btn btn-green" id="kpDo">' + icon('check') + 'Simpan pembayaran</button>'
+    });
+    const el = m.el;
+    let method = 'Tunai';
+    const rest = () => {
+      const a = parseNum($('#kpAmt', el).value);
+      $('#kpRest', el).innerHTML = a > c.outstanding ? '<div class="notice n-err">Melebihi sisa kasbon.</div>'
+        : '<div class="notice ' + (a >= c.outstanding ? 'n-ok' : 'n-info') + '">' + (a >= c.outstanding ? 'Kasbon akan LUNAS 🎉' : 'Sisa setelah bayar: <b>&nbsp;' + esc(rp(c.outstanding - a)) + '</b>') + '</div>';
+    };
+    el.addEventListener('click', (e) => {
+      const q = e.target.closest('[data-amt]');
+      if (q) { $('#kpAmt', el).value = fmtNum(Number(q.getAttribute('data-amt'))); rest(); }
+      const pm = e.target.closest('[data-pm]');
+      if (pm) { method = pm.getAttribute('data-pm'); $$('[data-pm]', el).forEach((b) => b.classList.toggle('on', b === pm)); }
+    });
+    $('#kpAmt', el).addEventListener('input', rest);
+    rest();
+    $('#kpDo', el).addEventListener('click', async () => {
+      const amount = parseNum($('#kpAmt', el).value);
+      if (!(amount > 0)) { toast('Isi jumlah bayar', 'err'); return; }
+      try {
+        const r = await withBusy('Menyimpan pembayaran…', () => api('apiPayCredit', { customer_id: c.customer_id, amount: amount, method: method, note: $('#kpNote', el).value }));
+        m.close();
+        App.customers = null;
+        await this.load();
+        const done = openModal({
+          title: r.remaining ? 'Cicilan tercatat' : 'Kasbon lunas 🎉',
+          body: '<div class="success-burst"><div class="check">' + icon('check') + '</div><div class="big-total">' + esc(rp(r.paid)) + '</div><p class="muted">Sisa kasbon ' + esc(r.name) + ': <b>' + esc(rp(r.remaining)) + '</b></p></div>',
+          foot: '<button class="btn" id="kpPrint">' + icon('printer') + 'Cetak bukti</button>' + (c.phone ? '<button class="btn btn-wa" id="kpWa">' + icon('wa') + 'Kirim bukti WA</button>' : '') + '<button class="btn btn-primary" data-close>Selesai</button>',
+          noFocus: true
+        });
+        $('#kpPrint', done.el).addEventListener('click', () => printHtml(paymentReceiptHtml(r)));
+        const wa = $('#kpWa', done.el);
+        if (wa) wa.addEventListener('click', () => openWa(c.phone, 'Terima kasih ' + r.name + ' 🙏\nPembayaran kasbon ' + rp(r.paid) + ' (' + r.method + ') sudah kami terima pada ' + fmtDateTime(r.at) + '.\nSisa kasbon: ' + rp(r.remaining) + '.\n— ' + (App.settings.BUSINESS_NAME || '')));
+      } catch (e) { /* toast */ }
+    });
+  },
+
+  async detail(c) {
+    const m = openModal({ title: c.name, body: skeleton(6), wide: true, noFocus: true });
+    const body = $('.modal-body', m.el);
+    try {
+      const d = await api('apiCustomerDetail', c.customer_id);
+      const st = (k) => k.status === 'Lunas' ? 'b-green' : (k.days_overdue > 0 ? 'b-red' : (k.status === 'Cicil' ? 'b-yellow' : 'b-orange'));
+      body.innerHTML = '<div class="grid g3"><div><div class="small muted">Sisa kasbon</div><b class="num" style="font-size:1.2rem">' + esc(rp(d.customer.outstanding)) + '</b></div>' +
+        '<div><div class="small muted">Limit</div><b>' + esc(rp(d.customer.credit_limit)) + '</b></div><div><div class="small muted">Kontak</div><b>' + esc(d.customer.phone ? phoneLocal(d.customer.phone) : '-') + '</b><div class="small muted">' + esc(d.customer.address) + '</div></div></div>' +
+        (d.customer.notes ? '<p class="notice n-info mt1">' + esc(d.customer.notes) + '</p>' : '') +
+        '<h3 class="mt2">Catatan kasbon</h3>' + (d.credits.length ? '<table class="rtable"><thead><tr><th>Kasbon</th><th>Asal</th><th class="n">Jumlah</th><th class="n">Dibayar</th><th class="n">Sisa</th><th>Jatuh tempo</th><th>Status</th></tr></thead><tbody>' +
+          d.credits.map((k) => '<tr><td class="td-title">' + esc(k.credit_id) + '</td><td data-label="Asal">' + esc(k.trx_id || 'Saldo awal (buku lama)') + '</td><td class="n" data-label="Jumlah">' + esc(rp(k.amount)) + '</td>' +
+            '<td class="n" data-label="Dibayar">' + esc(rp(k.paid_amount)) + '</td><td class="n" data-label="Sisa"><b>' + esc(rp(k.balance)) + '</b></td><td data-label="Jatuh tempo">' + esc(fmtDate(k.due_date)) + '</td>' +
+            '<td data-label="Status"><span class="badge ' + st(k) + '">' + esc(k.open && k.days_overdue > 0 ? 'Lewat ' + k.days_overdue + ' hari' : k.status) + '</span></td></tr>').join('') + '</tbody></table>' : '<p class="muted">Belum pernah kasbon.</p>') +
+        '<h3 class="mt2">Riwayat pembayaran</h3>' + (d.payments.length ? '<ul class="list">' + d.payments.map((p) => '<li><div class="li-main"><div class="li-title">' + esc(rp(p.amount)) + ' · ' + esc(p.method || '-') + '</div><div class="li-sub">' + esc(fmtDateTime(p.at)) + ' · ' + esc(p.user) + (p.note ? ' · ' + esc(p.note) : '') + '</div></div></li>').join('') + '</ul>' : '<p class="muted">Belum ada pembayaran.</p>') +
+        (App.can('credit.admin') ? '<div class="divider"></div><details><summary style="cursor:pointer;font-weight:800">Tambah saldo awal dari buku kasbon lama</summary><div class="row mt1"><label class="field"><span>Jumlah</span><input id="obAmt" inputmode="numeric"></label><label class="field"><span>Jatuh tempo</span><input id="obDue" type="date" value="' + todayStr(14) + '"></label></div><button class="btn btn-primary" id="obSave">Simpan saldo awal</button></details>' : '');
+      const ob = $('#obSave', body);
+      if (ob) ob.addEventListener('click', async () => {
+        try {
+          await withBusy('Menyimpan…', () => api('apiAddOpeningCredit', { customer_id: c.customer_id, amount: parseNum($('#obAmt', body).value), due_date: $('#obDue', body).value }));
+          m.close(); toast('Saldo awal kasbon tersimpan', 'ok'); this.load();
+        } catch (e) { /* toast */ }
+      });
+    } catch (e) { body.innerHTML = '<div class="notice n-err">' + esc(e.message) + '</div>'; }
+  },
+
+  editCustomer(c) {
+    const owner = App.can('credit.admin');
+    const m = openModal({
+      title: c ? 'Ubah pelanggan' : 'Pelanggan baru',
+      body: '<label class="field"><span>Nama</span><input id="cfName" maxlength="60" value="' + esc(c ? c.name : '') + '" placeholder="Mis. Bu Siti Aminah"></label>' +
+        '<label class="field"><span>Nomor HP / WhatsApp</span><input id="cfPhone" inputmode="tel" maxlength="20" value="' + esc(c && c.phone ? phoneLocal(c.phone) : '') + '" placeholder="0812…"></label>' +
+        '<label class="field"><span>Alamat</span><input id="cfAddr" maxlength="160" value="' + esc(c ? c.address : '') + '"></label>' +
+        '<label class="field"><span>Limit kasbon (Rp)</span><input id="cfLimit" inputmode="numeric" value="' + esc(c ? fmtNum(c.credit_limit) : '0') + '"' + (owner ? '' : ' disabled') + '>' +
+        '<span class="hint">' + (owner ? 'Isi 0 bila pelanggan tidak boleh kasbon.' : 'Limit kasbon hanya bisa diatur oleh Owner.') + '</span></label>' +
+        '<label class="field"><span>Catatan</span><input id="cfNotes" maxlength="200" value="' + esc(c ? c.notes : '') + '"></label>',
+      foot: '<button class="btn" data-close>Batal</button><button class="btn btn-primary" id="cfSave">' + icon('check') + 'Simpan</button>'
+    });
+    $('#cfSave', m.el).addEventListener('click', async () => {
+      const payload = {
+        customer_id: c ? c.customer_id : '', name: $('#cfName', m.el).value, phone: $('#cfPhone', m.el).value,
+        address: $('#cfAddr', m.el).value, credit_limit: parseNum($('#cfLimit', m.el).value), notes: $('#cfNotes', m.el).value
+      };
+      if (!payload.name.trim()) { toast('Nama wajib diisi', 'err'); return; }
+      try {
+        await withBusy('Menyimpan…', () => api('apiSaveCustomer', payload));
+        m.close();
+        toast(c ? 'Data pelanggan diperbarui' : 'Pelanggan ditambahkan', 'ok');
+        this.load();
+      } catch (e) { /* toast */ }
+    });
+  }
+};
+</script>

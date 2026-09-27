@@ -1,0 +1,242 @@
+<section class="page" id="page-stok" hidden>
+  <div class="page-head">
+    <div>
+      <h1>Stok Masuk</h1>
+      <p class="sub">Catat kulakan, harga modal rata-rata dihitung otomatis.</p>
+    </div>
+  </div>
+  <div class="tabs" id="skTabs">
+    <button data-tab="nota" class="on">Nota kulakan</button>
+    <button data-tab="saran">Saran kulakan</button>
+    <button data-tab="opname">Opname</button>
+    <button data-tab="riwayat">Riwayat</button>
+  </div>
+
+  <div data-panel="nota">
+    <div class="card">
+      <div class="row">
+        <label class="field"><span>Pemasok / toko grosir</span><input id="skSupplier" maxlength="60" placeholder="Mis. Toko Grosir Sinar Jaya"></label>
+        <label class="field"><span>Catatan</span><input id="skNote" maxlength="120" placeholder="Mis. nota no. 123"></label>
+      </div>
+      <div class="search"><i data-icon="search"></i><input id="skSearch" type="search" placeholder="Cari / scan barang untuk ditambahkan…" autocomplete="off"></div>
+      <div id="skResults" class="mt1"></div>
+    </div>
+    <div class="card mt2">
+      <div class="card-head"><h2>Daftar barang masuk</h2><span class="badge b-orange" id="skCount">0</span></div>
+      <div id="skLines"></div>
+      <div class="cart-total"><span>Total belanja</span><span class="num" id="skTotal">Rp 0</span></div>
+      <button class="btn btn-green btn-block btn-lg" id="skSave" disabled><i data-icon="check"></i>Simpan stok masuk</button>
+    </div>
+  </div>
+
+  <div data-panel="saran" hidden>
+    <div class="card tint-yellow">
+      <div class="card-head"><h2>Saran Kulakan</h2><span id="sgBadge"></span></div>
+      <p class="muted small">Berdasarkan penjualan 28 hari terakhir dan stok sekarang. Aturan dasar: rata-rata terjual per hari × 7 − stok.</p>
+      <button class="btn btn-yellow" id="sgRun"><i data-icon="sparkle"></i>Buat saran kulakan</button>
+      <div id="sgOut" class="mt2"></div>
+    </div>
+  </div>
+
+  <div data-panel="opname" hidden>
+    <div class="card">
+      <h2>Stok opname / penyesuaian</h2>
+      <p class="muted small">Hitung stok fisik di rak, lalu samakan dengan sistem. Selisih dicatat di riwayat.</p>
+      <label class="field"><span>Barang</span><select id="opProduct"></select></label>
+      <div id="opInfo"></div>
+      <div class="row">
+        <label class="field"><span>Stok fisik</span><input id="opActual" inputmode="decimal" placeholder="0"></label>
+        <label class="field"><span>Alasan</span><input id="opNote" maxlength="120" placeholder="Mis. rusak, hilang, hitung ulang"></label>
+      </div>
+      <button class="btn btn-primary" id="opSave"><i data-icon="check"></i>Simpan penyesuaian</button>
+    </div>
+  </div>
+
+  <div data-panel="riwayat" hidden>
+    <div class="card"><div class="card-head"><h2>Riwayat pergerakan stok</h2><button class="btn btn-sm" id="mvReload"><i data-icon="refresh"></i>Muat ulang</button></div><div id="mvList"></div></div>
+  </div>
+</section>
+<script>
+Pages.stok = {
+  products: [], byId: {}, lines: [], tab: 'nota',
+  init() {
+    $('#skTabs').addEventListener('click', (e) => { const b = e.target.closest('[data-tab]'); if (b) this.showTab(b.getAttribute('data-tab')); });
+    $('#skSearch').addEventListener('input', debounce(() => this.search(), 100));
+    $('#skSearch').addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      const q = e.target.value.trim();
+      const p = this.products.find((x) => x.barcode && x.barcode === q) || (this.matches(q).length === 1 ? this.matches(q)[0] : null);
+      if (p) { this.addLine(p.product_id, 1); e.target.value = ''; $('#skResults').innerHTML = ''; }
+    });
+    $('#skResults').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-add]');
+      if (b) { this.addLine(b.getAttribute('data-add'), 1); $('#skSearch').value = ''; $('#skResults').innerHTML = ''; $('#skSearch').focus(); }
+    });
+    $('#skLines').addEventListener('input', (e) => {
+      const i = e.target.closest('[data-f]');
+      if (!i) return;
+      const line = this.lines[Number(i.getAttribute('data-i'))];
+      const f = i.getAttribute('data-f');
+      line[f] = f === 'expiry' ? i.value : parseNum(i.value);
+      this.renderTotals();
+    });
+    $('#skLines').addEventListener('click', (e) => {
+      const d = e.target.closest('[data-del]');
+      if (d) { this.lines.splice(Number(d.getAttribute('data-del')), 1); this.renderLines(); }
+    });
+    $('#skSave').addEventListener('click', () => this.save());
+    $('#sgRun').addEventListener('click', () => this.suggest());
+    $('#opProduct').addEventListener('change', () => this.opInfo());
+    $('#opSave').addEventListener('click', () => this.opname());
+    $('#mvReload').addEventListener('click', () => this.moves());
+  },
+  async enter() {
+    try {
+      this.products = (await App.loadProducts(true)).filter((p) => p.active);
+      this.byId = {};
+      this.products.forEach((p) => { this.byId[p.product_id] = p; });
+      $('#opProduct').innerHTML = '<option value="">— pilih barang —</option>' + this.products.map((p) => '<option value="' + esc(p.product_id) + '">' + esc(p.name) + '</option>').join('');
+      this.renderLines();
+      if (this.tab === 'riwayat') this.moves();
+    } catch (e) { toast(e.message, 'err'); }
+  },
+  showTab(t) {
+    this.tab = t;
+    $$('#skTabs button').forEach((b) => b.classList.toggle('on', b.getAttribute('data-tab') === t));
+    $$('#page-stok [data-panel]').forEach((p) => { p.hidden = p.getAttribute('data-panel') !== t; });
+    if (t === 'riwayat') this.moves();
+  },
+  matches(q) {
+    const tokens = q.toLowerCase().split(/\s+/).filter(Boolean);
+    if (!tokens.length) return [];
+    return this.products.filter((p) => tokens.every((t) => (p.name + ' ' + p.barcode).toLowerCase().indexOf(t) >= 0));
+  },
+  search() {
+    const list = this.matches($('#skSearch').value).slice(0, 8);
+    $('#skResults').innerHTML = list.length ? '<ul class="list">' + list.map((p) => '<li><div class="li-main"><div class="li-title">' + esc(p.name) + '</div><div class="li-sub">Stok ' + esc(fmtNum(p.stock)) + ' ' + esc(p.unit) + ' · modal ' + esc(rp(p.cost_price)) + '</div></div>' +
+      '<button class="btn btn-sm btn-primary" data-add="' + esc(p.product_id) + '">' + icon('plus') + 'Tambah</button></li>').join('') + '</ul>' : ($('#skSearch').value.trim() ? '<p class="muted small">Tidak ditemukan.</p>' : '');
+  },
+  addLine(id, qty, cost) {
+    const p = this.byId[id];
+    if (!p) return;
+    const ex = this.lines.find((l) => l.product_id === id);
+    if (ex) ex.qty += qty;
+    else this.lines.push({ product_id: id, qty: qty, cost: cost !== undefined ? cost : p.cost_price, expiry: p.expiry_date || '' });
+    this.renderLines();
+  },
+  renderLines() {
+    if (!this.lines.length) {
+      $('#skLines').innerHTML = emptyState('box', 'Belum ada barang', 'Cari atau scan barang di atas untuk mulai mencatat kulakan.');
+    } else {
+      $('#skLines').innerHTML = '<table class="rtable"><thead><tr><th>Barang</th><th>Jumlah</th><th>Harga beli / satuan</th><th>Kedaluwarsa</th><th class="n">Subtotal</th><th></th></tr></thead><tbody>' +
+        this.lines.map((l, i) => {
+          const p = this.byId[l.product_id];
+          return '<tr><td class="td-title"><div>' + esc(p.name) + '<div class="small muted" style="font-weight:600">Stok ' + esc(fmtNum(p.stock)) + ' ' + esc(p.unit) + ' · modal lama ' + esc(rp(p.cost_price)) + '</div><div class="small" data-avg="' + i + '"></div></div></td>' +
+            '<td data-label="Jumlah"><input style="max-width:110px" inputmode="decimal" data-f="qty" data-i="' + i + '" value="' + esc(fmtNum(l.qty)) + '"></td>' +
+            '<td data-label="Harga beli"><input style="max-width:140px" inputmode="numeric" data-f="cost" data-i="' + i + '" value="' + esc(fmtNum(l.cost)) + '"></td>' +
+            '<td data-label="Kedaluwarsa"><input style="max-width:170px" type="date" data-f="expiry" data-i="' + i + '" value="' + esc(l.expiry) + '"></td>' +
+            '<td class="n" data-label="Subtotal" data-sub="' + i + '"></td><td class="td-actions"><button class="btn btn-sm btn-ghost" data-del="' + i + '" aria-label="Hapus">' + icon('trash') + '</button></td></tr>';
+        }).join('') + '</tbody></table>';
+    }
+    this.renderTotals();
+  },
+  renderTotals() {
+    let total = 0;
+    this.lines.forEach((l, i) => {
+      const p = this.byId[l.product_id];
+      const sub = (l.qty || 0) * (l.cost || 0);
+      total += sub;
+      const cell = $('[data-sub="' + i + '"]');
+      if (cell) cell.textContent = rp(sub);
+      const avgEl = $('[data-avg="' + i + '"]');
+      if (avgEl && p) {
+        const old = Math.max(0, p.stock);
+        const avg = old + l.qty > 0 ? Math.round((old * p.cost_price + l.qty * l.cost) / (old + l.qty)) : l.cost;
+        avgEl.innerHTML = avg !== p.cost_price ? '<span class="badge b-yellow">Modal rata-rata baru ' + esc(rp(avg)) + '</span>' : '';
+      }
+    });
+    $('#skTotal').textContent = rp(total);
+    $('#skCount').textContent = this.lines.length;
+    $('#skSave').disabled = !this.lines.length;
+  },
+  async save() {
+    const bad = this.lines.find((l) => !(l.qty > 0));
+    if (bad) { toast('Jumlah ' + this.byId[bad.product_id].name + ' harus lebih dari 0', 'err'); return; }
+    const payload = {
+      supplier: $('#skSupplier').value, note: $('#skNote').value,
+      items: this.lines.map((l) => ({ product_id: l.product_id, qty: l.qty, cost_price: l.cost, expiry_date: l.expiry }))
+    };
+    try {
+      const r = await withBusy('Menyimpan stok masuk…', () => api('apiStockIn', payload));
+      this.lines = [];
+      $('#skNote').value = '';
+      toast(r.lines.length + ' barang masuk · ' + rp(r.total_cost), 'ok');
+      App.products = null;
+      this.enter();
+    } catch (e) { /* toast */ }
+  },
+  async suggest() {
+    const btn = $('#sgRun');
+    btn.disabled = true;
+    $('#sgBadge').innerHTML = '';
+    $('#sgOut').innerHTML = '<div class="notice n-info"><span class="spinner sm"></span><span>Menganalisis penjualan 28 hari…</span></div>';
+    try {
+      const r = await api('apiAiSaranKulakan');
+      $('#sgBadge').innerHTML = aiBadge(r.source);
+      if (!r.items.length) {
+        $('#sgOut').innerHTML = (r.note ? '<p class="muted small">' + esc(r.note) + '</p>' : '') + emptyState('ok', 'Stok cukup untuk 7 hari', 'Belum ada barang yang perlu dikulak minggu ini.');
+        return;
+      }
+      $('#sgOut').innerHTML = (r.summary ? '<p><b>' + esc(r.summary) + '</b></p>' : '') + (r.note ? '<p class="muted small">' + esc(r.note) + '</p>' : '') +
+        '<table class="rtable"><thead><tr><th>Barang</th><th class="n">Stok</th><th class="n">Laku/hari</th><th class="n">Kulak</th><th>Alasan</th><th class="n">Perkiraan</th></tr></thead><tbody>' +
+        r.items.map((x) => '<tr><td class="td-title">' + esc(x.name) + '</td><td class="n" data-label="Stok">' + esc(fmtNum(x.stock)) + '</td><td class="n" data-label="Laku/hari">' + esc(fmtNum(x.avg_daily)) + '</td>' +
+          '<td class="n" data-label="Kulak"><b>' + esc(fmtNum(x.qty)) + ' ' + esc(x.unit) + '</b></td><td data-label="Alasan" class="small">' + esc(x.reason) + '</td><td class="n" data-label="Perkiraan">' + esc(rp(x.est_cost)) + '</td></tr>').join('') +
+        '</tbody></table><div class="cart-total"><span>Perkiraan belanja</span><span class="num">' + esc(rp(r.total_cost)) + '</span></div>' +
+        '<div class="actions"><button class="btn btn-green" id="sgToNota">' + icon('plus') + 'Masukkan ke nota</button><button class="btn btn-wa" id="sgWa">' + icon('wa') + 'Kirim daftar ke pemasok</button></div>';
+      $('#sgToNota').addEventListener('click', () => {
+        r.items.forEach((x) => this.addLine(x.product_id, x.qty));
+        this.showTab('nota');
+        toast('Saran dimasukkan ke nota. Cek harga beli sebelum simpan.', 'ok');
+      });
+      $('#sgWa').addEventListener('click', async () => {
+        const text = 'Halo, saya dari ' + (App.settings.BUSINESS_NAME || 'warung') + '. Mau pesan:\n' + r.items.map((x, i) => (i + 1) + '. ' + x.name + ' — ' + fmtNum(x.qty) + ' ' + x.unit).join('\n') + '\nTerima kasih 🙏';
+        const v = await confirmBox({ title: 'Kirim ke pemasok', message: 'Nomor WhatsApp pemasok:', okText: 'Buka WhatsApp', input: { label: 'Nomor HP', placeholder: '0812…' } });
+        if (v && v !== true) openWa(v, text);
+      });
+    } catch (e) {
+      $('#sgOut').innerHTML = '<div class="notice n-err">' + esc(e.message) + '</div>';
+    } finally { btn.disabled = false; }
+  },
+  opInfo() {
+    const p = this.byId[$('#opProduct').value];
+    $('#opInfo').innerHTML = p ? '<div class="notice n-info">' + icon('box') + '<span>Stok di sistem: <b>' + esc(fmtNum(p.stock)) + ' ' + esc(p.unit) + '</b></span></div>' : '';
+    if (p) $('#opActual').value = fmtNum(p.stock);
+  },
+  async opname() {
+    const id = $('#opProduct').value;
+    if (!id) { toast('Pilih barang dulu', 'err'); return; }
+    if (!$('#opNote').value.trim()) { toast('Isi alasan penyesuaian', 'err'); return; }
+    try {
+      const r = await withBusy('Menyimpan…', () => api('apiStockAdjust', { product_id: id, actual_stock: parseNum($('#opActual').value), note: $('#opNote').value }));
+      toast(r.delta === 0 ? 'Stok sudah sama, tidak ada perubahan' : 'Stok ' + r.name + ' disesuaikan (' + (r.delta > 0 ? '+' : '') + fmtNum(r.delta) + ')', 'ok');
+      $('#opNote').value = '';
+      App.products = null;
+      await this.enter();
+      $('#opProduct').value = id;
+      this.opInfo();
+    } catch (e) { /* toast */ }
+  },
+  async moves() {
+    $('#mvList').innerHTML = skeleton(6);
+    try {
+      const list = await api('apiStockMoves', 200);
+      const cls = { AWAL: 'b-gray', MASUK: 'b-green', JUAL: 'b-orange', OPNAME: 'b-yellow', BATAL: 'b-red' };
+      $('#mvList').innerHTML = list.length ? '<table class="rtable"><thead><tr><th>Barang</th><th>Waktu</th><th>Jenis</th><th class="n">Jumlah</th><th class="n">Harga modal</th><th>Catatan</th><th>Oleh</th></tr></thead><tbody>' +
+        list.map((m) => '<tr><td class="td-title">' + esc(m.name) + '</td><td data-label="Waktu">' + esc(fmtDateTime(m.date)) + '</td><td data-label="Jenis"><span class="badge ' + (cls[m.type] || 'b-gray') + '">' + esc(m.type) + '</span></td>' +
+          '<td class="n" data-label="Jumlah"><b>' + (m.qty > 0 ? '+' : '') + esc(fmtNum(m.qty)) + '</b></td><td class="n" data-label="Modal">' + esc(rp(m.cost_price)) + '</td><td data-label="Catatan" class="small">' + esc(m.note) + '</td><td data-label="Oleh">' + esc(m.user) + '</td></tr>').join('') + '</tbody></table>'
+        : emptyState('box', 'Belum ada riwayat stok', '');
+    } catch (e) { $('#mvList').innerHTML = '<div class="notice n-err">' + esc(e.message) + '</div>'; }
+  }
+};
+</script>

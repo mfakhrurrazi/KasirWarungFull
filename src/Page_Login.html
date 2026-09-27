@@ -1,0 +1,89 @@
+<section class="page" id="page-login" hidden>
+  <div class="auth-wrap">
+    <div class="card auth-card">
+      <div class="auth-illus">
+        <svg viewBox="0 0 260 150" aria-hidden="true">
+          <ellipse cx="130" cy="142" rx="110" ry="7" fill="#F5E6D6"/>
+          <rect x="40" y="62" width="180" height="76" rx="10" fill="#FFF7ED" stroke="#FED7AA" stroke-width="3"/>
+          <path d="M26 62h208l-18-40H44z" fill="#F97316"/>
+          <path d="M66 22l-10 40M96 22l-5 40M130 22v40M164 22l5 40M194 22l10 40" stroke="#fff" stroke-width="9"/>
+          <path d="M26 62c10 12 24 12 35 0 10 12 24 12 34 0 10 12 24 12 35 0 10 12 24 12 34 0 10 12 24 12 35 0 10 12 24 12 35 0" fill="none" stroke="#EA580C" stroke-width="4"/>
+          <rect x="58" y="86" width="48" height="10" rx="4" fill="#FACC15"/>
+          <rect x="58" y="102" width="36" height="10" rx="4" fill="#FDBA74"/>
+          <rect x="116" y="84" width="34" height="54" rx="5" fill="#FACC15"/>
+          <circle cx="182" cy="96" r="12" fill="#16A34A"/><circle cx="200" cy="112" r="9" fill="#F97316"/><circle cx="178" cy="120" r="8" fill="#FDE047"/>
+        </svg>
+      </div>
+      <h1 class="auth-title" id="loginBiz">KasirWarung AI</h1>
+      <p class="auth-sub">Kasir cepat, stok rapi, kasbon tercatat.</p>
+
+      <div id="dbNotReady" class="notice n-warn" hidden>
+        <div>
+          <b>Database belum dibuat.</b>
+          <p class="small mb0">Tekan tombol di bawah untuk membuat spreadsheet <b>DB_KasirWarung</b> berisi data contoh. Hanya perlu sekali.</p>
+          <button class="btn btn-primary btn-block mt1" id="btnInitDb" type="button">Siapkan Database</button>
+        </div>
+      </div>
+
+      <form id="loginForm" autocomplete="on" novalidate>
+        <label class="field"><span>Username</span>
+          <input id="loginUser" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="40" required>
+        </label>
+        <label class="field"><span>Password</span>
+          <div class="pw-wrap">
+            <input id="loginPass" name="password" type="password" autocomplete="current-password" maxlength="100" required>
+            <button type="button" id="loginPwToggle">Lihat</button>
+          </div>
+        </label>
+        <button class="btn btn-primary btn-block btn-lg" type="submit" id="loginBtn">Masuk</button>
+      </form>
+      <p class="notice n-info small mt2" id="loginHint" hidden>Login pertama: <b>admin</b> / <b>admin123</b>. Setup Wizard akan meminta Anda menggantinya.</p>
+      <p class="text-right small mb0"><a href="#" data-go="panduan">Lupa password?</a></p>
+    </div>
+  </div>
+</section>
+<script>
+Pages.login = {
+  init() {
+    $('#loginPwToggle').addEventListener('click', () => {
+      const i = $('#loginPass');
+      i.type = i.type === 'password' ? 'text' : 'password';
+      $('#loginPwToggle').textContent = i.type === 'password' ? 'Lihat' : 'Tutup';
+    });
+    $('#loginForm').addEventListener('submit', (e) => { e.preventDefault(); this.submit(); });
+    $('#btnInitDb').addEventListener('click', () => this.initDb());
+  },
+  enter() {
+    const b = App.boot;
+    $('#loginBiz').textContent = (b.business && b.business.name) || 'KasirWarung AI';
+    $('#dbNotReady').hidden = !!b.dbReady;
+    $('#loginForm').hidden = !b.dbReady;
+    $('#loginHint').hidden = !b.dbReady || !!b.setupDone;
+    if (b.dbReady) setTimeout(() => $('#loginUser').focus(), 80);
+  },
+  async initDb() {
+    try {
+      await withBusy('Membuat database… (±30 detik)', () => api('apiInitDatabase'));
+      const boot = await api('apiBoot');
+      Object.assign(App.boot, boot);
+      App.renderHeader();
+      App.renderFooter();
+      toast('Database siap! Silakan login.', 'ok');
+      this.enter();
+    } catch (e) { /* toast shown */ }
+  },
+  async submit() {
+    const u = $('#loginUser').value.trim(), p = $('#loginPass').value;
+    if (!u || !p) { toast('Isi username dan password', 'err'); return; }
+    $('#loginBtn').disabled = true;
+    try {
+      const d = await withBusy('Masuk…', () => api('apiLogin', u, p));
+      $('#loginPass').value = '';
+      App.applySession(d);
+      toast('Selamat datang, ' + d.user.full_name.split(' ')[0] + '!', 'ok');
+      App.go(App.defaultPage());
+    } catch (e) { /* toast shown */ }
+    finally { $('#loginBtn').disabled = false; }
+  }
+};
+</script>

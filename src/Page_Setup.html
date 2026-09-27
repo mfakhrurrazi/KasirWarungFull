@@ -1,0 +1,129 @@
+<section class="page" id="page-setup" hidden>
+  <div style="max-width:640px;margin:0 auto">
+    <div class="page-head">
+      <div>
+        <h1>Selamat datang! 🎉</h1>
+        <p class="sub">4 langkah singkat supaya warung siap jualan.</p>
+      </div>
+    </div>
+    <div class="steps" id="setupSteps"><span></span><span></span><span></span><span></span></div>
+
+    <div class="card" data-step="1">
+      <h2>1. Profil warung</h2>
+      <p class="muted small">Tampil di header aplikasi dan struk belanja.</p>
+      <label class="field"><span>Nama warung / toko</span><input id="suName" maxlength="60" placeholder="Contoh: Warung Berkah Jaya"></label>
+      <label class="field"><span>Alamat singkat</span><input id="suAddr" maxlength="160" placeholder="Jl. Melati No. 10, RT 03/RW 05"></label>
+      <label class="field"><span>Nomor WhatsApp warung</span><input id="suWa" inputmode="tel" maxlength="20" placeholder="0812xxxxxxx"></label>
+      <label class="field"><span>URL logo (opsional)</span><input id="suLogo" maxlength="500" placeholder="https://…">
+        <span class="hint">Harus diawali https://. Kosongkan untuk memakai logo warung bawaan.</span></label>
+    </div>
+
+    <div class="card" data-step="2" hidden>
+      <h2>2. Keamanan akun</h2>
+      <div class="notice n-warn"><div><b>Wajib ganti password bawaan.</b> Password <span class="kbd">admin123</span> diketahui semua orang yang membaca panduan.</div></div>
+      <label class="field"><span>Password baru untuk <b id="suUser">admin</b></span>
+        <div class="pw-wrap"><input id="suPw" type="password" autocomplete="new-password" maxlength="100"><button type="button" id="suPwToggle">Lihat</button></div>
+        <span class="hint">Minimal 6 karakter. Simpan di tempat aman.</span></label>
+      <label class="field"><span>Ulangi password baru</span><input id="suPw2" type="password" autocomplete="new-password" maxlength="100"></label>
+      <label class="switch"><span>Nonaktifkan akun demo <span class="kbd">kasir</span> / kasir123</span><input type="checkbox" id="suNoDemo" checked></label>
+      <p class="muted small mb0">Anda bisa membuat akun kasir sendiri di menu Pengaturan → Pengguna.</p>
+    </div>
+
+    <div class="card" data-step="3" hidden>
+      <h2>3. Aturan warung</h2>
+      <div class="row">
+        <label class="field"><span>Pajak (%)</span><input id="suTax" inputmode="decimal" value="0"><span class="hint">Isi 0 bila tidak memungut pajak.</span></label>
+        <label class="field"><span>Jatuh tempo kasbon (hari)</span><input id="suDue" inputmode="numeric" value="14"></label>
+      </div>
+      <div class="row">
+        <label class="field"><span>Peringatan kedaluwarsa (hari)</span><input id="suExp" inputmode="numeric" value="30"></label>
+        <label class="field"><span>Catatan di struk</span><input id="suFooter" maxlength="160" placeholder="Terima kasih, semoga berkah!"></label>
+      </div>
+      <label class="switch"><span>Aktifkan fitur AI <span class="badge b-ai">Dibantu AI</span><br><small class="muted">Aplikasi tetap jalan normal walau AI dimatikan.</small></span><input type="checkbox" id="suAi" checked></label>
+    </div>
+
+    <div class="card" data-step="4" hidden>
+      <h2>4. Data awal</h2>
+      <p class="muted small">Pilih cara memulai. Bisa diubah nanti di Pengaturan.</p>
+      <label class="choice on"><input type="radio" name="suData" value="keep" checked><span><b>Pakai 10 data contoh</b><span class="muted small">Produk, pelanggan dan kasbon contoh untuk belajar.</span></span></label>
+      <label class="choice"><input type="radio" name="suData" value="demo"><span><b>Data demo 28 hari</b><span class="muted small">Riwayat penjualan lengkap — cocok untuk mencoba grafik & AI.</span></span></label>
+      <label class="choice"><input type="radio" name="suData" value="template"><span><b>Katalog 300 barang warung</b><span class="muted small">Daftar sembako, minuman, rokok, snack dll. Stok 0 — isi lewat Stok Masuk.</span></span></label>
+      <label class="choice"><input type="radio" name="suData" value="empty"><span><b>Mulai dari kosong</b><span class="muted small">Hapus semua data contoh. Isi produk sendiri atau impor CSV.</span></span></label>
+    </div>
+
+    <div class="actions mt2" style="justify-content:space-between">
+      <button class="btn" id="suBack" type="button">Kembali</button>
+      <button class="btn btn-primary" id="suNext" type="button">Lanjut</button>
+    </div>
+  </div>
+</section>
+<script>
+Pages.setup = {
+  step: 1,
+  init() {
+    $('#suBack').addEventListener('click', () => this.show(this.step - 1));
+    $('#suNext').addEventListener('click', () => this.next());
+    $('#suPwToggle').addEventListener('click', () => {
+      const i = $('#suPw'); i.type = i.type === 'password' ? 'text' : 'password';
+      $('#suPwToggle').textContent = i.type === 'password' ? 'Lihat' : 'Tutup';
+    });
+    $$('input[name=suData]').forEach((r) => r.addEventListener('change', () => {
+      $$('#page-setup .choice').forEach((c) => c.classList.toggle('on', $('input', c).checked));
+    }));
+  },
+  enter() {
+    const s = App.settings || {};
+    $('#suName').value = s.BUSINESS_NAME || '';
+    $('#suAddr').value = s.BUSINESS_ADDRESS || '';
+    $('#suWa').value = phoneLocal(s.WHATSAPP);
+    $('#suLogo').value = s.LOGO_URL || '';
+    $('#suTax').value = s.TAX_PERCENT || 0;
+    $('#suDue').value = s.KASBON_DUE_DAYS || 14;
+    $('#suExp').value = s.EXPIRY_WARN_DAYS || 30;
+    $('#suFooter').value = s.RECEIPT_FOOTER || '';
+    $('#suAi').checked = s.AI_ENABLED !== false;
+    $('#suUser').textContent = App.user ? App.user.username : 'admin';
+    this.show(1);
+  },
+  show(n) {
+    this.step = Math.max(1, Math.min(4, n));
+    $$('#page-setup [data-step]').forEach((c) => { c.hidden = Number(c.getAttribute('data-step')) !== this.step; });
+    $$('#setupSteps span').forEach((s, i) => s.classList.toggle('on', i < this.step));
+    $('#suBack').style.visibility = this.step === 1 ? 'hidden' : 'visible';
+    $('#suNext').textContent = this.step === 4 ? 'Selesai & mulai jualan' : 'Lanjut';
+    window.scrollTo(0, 0);
+  },
+  next() {
+    if (this.step === 1 && !$('#suName').value.trim()) { toast('Nama warung wajib diisi', 'err'); return; }
+    if (this.step === 2) {
+      const p = $('#suPw').value, p2 = $('#suPw2').value;
+      if (p.length < 6) { toast('Password baru minimal 6 karakter', 'err'); return; }
+      if (p !== p2) { toast('Ulangi password belum sama', 'err'); return; }
+      if (p === 'admin123') { toast('Jangan pakai password bawaan', 'err'); return; }
+    }
+    if (this.step < 4) { this.show(this.step + 1); return; }
+    this.finish();
+  },
+  async finish() {
+    const mode = ($('input[name=suData]:checked') || {}).value || 'keep';
+    const payload = {
+      settings: {
+        BUSINESS_NAME: $('#suName').value, BUSINESS_ADDRESS: $('#suAddr').value, WHATSAPP: $('#suWa').value, LOGO_URL: $('#suLogo').value,
+        TAX_PERCENT: $('#suTax').value, KASBON_DUE_DAYS: $('#suDue').value, EXPIRY_WARN_DAYS: $('#suExp').value,
+        RECEIPT_FOOTER: $('#suFooter').value, AI_ENABLED: $('#suAi').checked
+      },
+      new_password: $('#suPw').value,
+      disable_demo_kasir: $('#suNoDemo').checked,
+      data_mode: mode
+    };
+    try {
+      const d = await withBusy(mode === 'template' ? 'Memasukkan 300 barang…' : 'Menyimpan pengaturan…', () => api('apiSetupWizard', payload));
+      $('#suPw').value = ''; $('#suPw2').value = '';
+      App.applySession(d);
+      toast('Warung siap! Selamat berjualan 🎉', 'ok');
+      if (d.imported) toast(d.imported.created + ' barang masuk katalog.', 'ok');
+      App.go(App.defaultPage());
+    } catch (e) { /* toast shown */ }
+  }
+};
+</script>

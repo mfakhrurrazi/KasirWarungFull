@@ -1,0 +1,182 @@
+<section class="page" id="page-dashboard" hidden>
+  <div class="page-head">
+    <div>
+      <h1 id="dbHello">Halo 👋</h1>
+      <p class="sub" id="dbDate"></p>
+    </div>
+    <div class="actions">
+      <button class="btn btn-primary" data-go="kasir"><i data-icon="cart"></i>Buka Kasir</button>
+      <button class="btn" data-go="stok"><i data-icon="truck"></i>Stok Masuk</button>
+      <button class="btn icon-btn" id="dbRefresh" aria-label="Muat ulang"><i data-icon="refresh"></i></button>
+    </div>
+  </div>
+
+  <div class="grid g4" id="dbKpis"></div>
+
+  <div class="card tint-yellow mt2" id="dbStoryCard">
+    <div class="card-head">
+      <h2>Cerita Omzet Hari Ini</h2>
+      <span id="dbStoryBadge"></span>
+    </div>
+    <div id="dbStory" class="muted">Ringkasan 3 kalimat tentang penjualan, barang terlaris dan margin hari ini.</div>
+    <button class="btn btn-yellow mt1" id="dbStoryBtn"><i data-icon="sparkle"></i>Buat cerita</button>
+  </div>
+
+  <div class="grid g2 mt2">
+    <div class="card">
+      <div class="card-head"><h2>Penjualan 7 hari</h2><span class="muted small">Rupiah</span></div>
+      <div class="chart-box"><canvas id="chWeek" aria-label="Grafik omzet dan laba 7 hari" role="img"></canvas></div>
+      <div class="legend"><span><i style="background:var(--s2)"></i>Omzet</span><span><i style="background:var(--s1)"></i>Laba kotor</span></div>
+      <details class="mt1"><summary class="small muted" style="cursor:pointer">Lihat tabel</summary><div id="dbWeekTable"></div></details>
+    </div>
+    <div class="card">
+      <div class="card-head"><h2>Metode bayar</h2><span class="muted small">30 hari</span></div>
+      <div class="chart-box sm"><canvas id="chMethod" aria-label="Grafik metode pembayaran 30 hari" role="img"></canvas></div>
+      <div class="legend" id="dbMethodLegend"></div>
+    </div>
+  </div>
+
+  <div class="card mt2">
+    <div class="card-head"><h2>10 produk terlaris</h2><span class="muted small">30 hari · jumlah terjual</span></div>
+    <div class="chart-box" id="dbTopBox"><canvas id="chTop" aria-label="Grafik 10 produk terlaris" role="img"></canvas></div>
+  </div>
+
+  <div class="grid g2 mt2">
+    <div class="card">
+      <div class="card-head"><h2>Stok menipis</h2><span id="dbLowCount" class="badge b-red"></span></div>
+      <div id="dbLow"></div>
+    </div>
+    <div class="card">
+      <div class="card-head"><h2>Hampir kedaluwarsa</h2><span id="dbExpCount" class="badge b-yellow"></span></div>
+      <div id="dbExp"></div>
+    </div>
+  </div>
+
+  <div class="card mt2">
+    <div class="card-head"><h2>Transaksi terakhir hari ini</h2><button class="btn btn-sm btn-ghost" data-go="laporan">Lihat laporan →</button></div>
+    <div id="dbRecent"></div>
+  </div>
+</section>
+<script>
+Pages.dashboard = {
+  data: null,
+  init() {
+    $('#dbRefresh').addEventListener('click', () => this.load());
+    $('#dbStoryBtn').addEventListener('click', () => this.story());
+  },
+  enter() {
+    const name = App.user ? App.user.full_name.split(' ')[0] : '';
+    const h = new Date().getHours();
+    const greet = h < 11 ? 'Selamat pagi' : (h < 15 ? 'Selamat siang' : (h < 18 ? 'Selamat sore' : 'Selamat malam'));
+    $('#dbHello').textContent = greet + ', ' + name + ' 👋';
+    this.load();
+  },
+  async load() {
+    $('#dbKpis').innerHTML = [1, 2, 3, 4].map(() => '<div class="card">' + skeleton(2) + '</div>').join('');
+    try {
+      const d = await api('apiDashboard');
+      this.data = d;
+      this.render(d);
+    } catch (e) {
+      $('#dbKpis').innerHTML = '<div class="notice n-err">' + esc(e.message) + '</div>';
+    }
+  },
+  render(d) {
+    $('#dbDate').textContent = 'Ringkasan ' + fmtDate(d.today);
+    const k = d.kpi;
+    const diff = k.yesterdayOmzet ? Math.round((k.omzet - k.yesterdayOmzet) / k.yesterdayOmzet * 100) : null;
+    const kpi = (label, value, sub, ic, cls) => '<div class="card kpi"><div class="k-icon ' + cls + '">' + icon(ic) + '</div>' +
+      '<div class="k-label">' + esc(label) + '</div><div class="k-value num">' + esc(value) + '</div><div class="k-sub">' + sub + '</div></div>';
+    $('#dbKpis').innerHTML =
+      kpi('Omzet hari ini', rp(k.omzet), diff === null ? 'Kemarin ' + esc(rp(k.yesterdayOmzet)) : (diff >= 0 ? '▲ ' : '▼ ') + Math.abs(diff) + '% dari kemarin', 'wallet', 'ic-orange') +
+      kpi('Laba kotor', rp(k.profit), 'Margin ' + esc(String(k.margin).replace('.', ',')) + '%', 'trend', 'ic-green') +
+      kpi('Transaksi', String(k.trx), 'Rata-rata ' + esc(rp(k.avg)), 'receipt', 'ic-yellow') +
+      kpi('Total kasbon', rp(d.kasbon.outstanding), d.kasbon.overdue ? '<span class="badge b-red">' + d.kasbon.overdue + ' lewat tempo</span>' : esc(d.kasbon.customers + ' pelanggan'), 'book', 'ic-red');
+
+    // 7-day line (one Rupiah axis; omzet vs laba kotor)
+    const surface = '#FFFFFF';
+    drawChart('chWeek', {
+      type: 'line',
+      data: {
+        labels: d.week.map((x) => x.label),
+        datasets: [
+          { label: 'Omzet', data: d.week.map((x) => x.omzet), borderColor: '#eb6834', backgroundColor: 'rgba(235,104,52,.10)', fill: true, tension: .35, borderWidth: 2, pointRadius: 4, pointHoverRadius: 6, pointBackgroundColor: '#eb6834', pointBorderColor: surface, pointBorderWidth: 2 },
+          { label: 'Laba kotor', data: d.week.map((x) => x.profit), borderColor: '#1baf7a', backgroundColor: 'transparent', tension: .35, borderWidth: 2, pointRadius: 4, pointHoverRadius: 6, pointBackgroundColor: '#1baf7a', pointBorderColor: surface, pointBorderWidth: 2 }
+        ]
+      },
+      options: {
+        maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => c.dataset.label + ': ' + rp(c.parsed.y) } } },
+        scales: {
+          y: { beginAtZero: true, grid: { color: '#F3EDE6' }, border: { display: false }, ticks: { callback: (v) => v >= 1e6 ? (v / 1e6).toString().replace('.', ',') + ' jt' : (v >= 1e3 ? Math.round(v / 1e3) + ' rb' : v) } },
+          x: { grid: { display: false } }
+        }
+      }
+    });
+    $('#dbWeekTable').innerHTML = '<table class="rtable"><thead><tr><th>Tanggal</th><th class="n">Transaksi</th><th class="n">Omzet</th><th class="n">Laba</th></tr></thead><tbody>' +
+      d.week.map((x) => '<tr><td data-label="Tanggal">' + esc(fmtDate(x.key)) + '</td><td class="n" data-label="Transaksi">' + x.trx + '</td><td class="n" data-label="Omzet">' + esc(rp(x.omzet)) + '</td><td class="n" data-label="Laba">' + esc(rp(x.profit)) + '</td></tr>').join('') + '</tbody></table>';
+
+    // Payment methods doughnut (validated categorical palette)
+    const MCOL = { Tunai: '#1baf7a', QRIS: '#eb6834', Transfer: '#2a78d6', Kasbon: '#4a3aa7' };
+    const total = d.methods.reduce((a, m) => a + m.total, 0);
+    drawChart('chMethod', {
+      type: 'doughnut',
+      data: { labels: d.methods.map((m) => m.method), datasets: [{ data: d.methods.map((m) => m.total), backgroundColor: d.methods.map((m) => MCOL[m.method]), borderColor: '#fff', borderWidth: 2, hoverOffset: 6 }] },
+      options: { maintainAspectRatio: false, cutout: '62%', plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => c.label + ': ' + rp(c.parsed) + (total ? ' (' + Math.round(c.parsed / total * 100) + '%)' : '') } } } }
+    });
+    $('#dbMethodLegend').innerHTML = d.methods.map((m) => '<span><i style="background:' + MCOL[m.method] + '"></i>' + esc(m.method) + ' · ' + esc(rp(m.total)) +
+      (total ? ' (' + Math.round(m.total / total * 100) + '%)' : '') + '</span>').join('');
+
+    // Top 10 products (single series, horizontal bars)
+    if (!d.top.length) {
+      $('#dbTopBox').innerHTML = emptyState('chart', 'Belum ada penjualan', 'Grafik muncul setelah ada transaksi.') ;
+    } else {
+      if (!$('#chTop')) $('#dbTopBox').innerHTML = '<canvas id="chTop" role="img" aria-label="Grafik 10 produk terlaris"></canvas>';
+      $('#dbTopBox').style.height = Math.max(220, d.top.length * 34 + 40) + 'px';
+      drawChart('chTop', {
+        type: 'bar',
+        data: { labels: d.top.map((t) => t.name.length > 26 ? t.name.slice(0, 25) + '…' : t.name), datasets: [{ label: 'Terjual', data: d.top.map((t) => t.qty), backgroundColor: '#F97316', borderRadius: 4, borderSkipped: 'start', barThickness: 18 }] },
+        options: {
+          indexAxis: 'y', maintainAspectRatio: false,
+          plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => { const t = d.top[c.dataIndex]; return fmtNum(t.qty) + ' ' + t.unit + ' · ' + rp(t.omzet); } } } },
+          scales: { x: { beginAtZero: true, grid: { color: '#F3EDE6' }, border: { display: false } }, y: { grid: { display: false }, ticks: { font: { weight: 700 } } } }
+        }
+      });
+    }
+
+    // Stock alerts
+    const st = d.stock;
+    $('#dbLowCount').textContent = st.lowCount + ' barang';
+    $('#dbLow').innerHTML = st.low.length ? '<ul class="list">' + st.low.slice(0, 8).map((p) =>
+      '<li><div class="li-main"><div class="li-title">' + esc(p.name) + '</div><div class="li-sub">Minimum ' + esc(fmtNum(p.min_stock)) + ' ' + esc(p.unit) + '</div></div>' +
+      '<span class="badge ' + (p.stock <= 0 ? 'b-red' : 'b-yellow') + '">Sisa ' + esc(fmtNum(p.stock)) + ' ' + esc(p.unit) + '</span></li>').join('') + '</ul>' +
+      (App.can('stock.in') ? '<button class="btn btn-sm btn-green mt1" data-go="stok">' + icon('truck') + 'Stok masuk / Saran kulakan</button>' : '')
+      : emptyState('ok', 'Stok aman', 'Tidak ada barang di bawah stok minimum.');
+    $('#dbExpCount').textContent = st.expiryCount + ' barang';
+    $('#dbExp').innerHTML = st.expiry.length ? '<ul class="list">' + st.expiry.slice(0, 8).map((p) =>
+      '<li><div class="li-main"><div class="li-title">' + esc(p.name) + '</div><div class="li-sub">Kedaluwarsa ' + esc(fmtDate(p.expiry_date)) + ' · stok ' + esc(fmtNum(p.stock)) + '</div></div>' +
+      '<span class="badge ' + (p.days < 0 ? 'b-red' : (p.days <= 7 ? 'b-orange' : 'b-yellow')) + '">' + (p.days < 0 ? 'Lewat ' + (-p.days) + ' hari' : (p.days === 0 ? 'Hari ini' : p.days + ' hari lagi')) + '</span></li>').join('') + '</ul>'
+      : emptyState('ok', 'Tidak ada yang hampir kedaluwarsa', 'Barang dengan tanggal kedaluwarsa ≤ 30 hari akan muncul di sini.');
+
+    $('#dbRecent').innerHTML = d.recent.length ? '<ul class="list">' + d.recent.map((r) =>
+      '<li><div class="li-main"><div class="li-title">' + esc(r.trx_id) + ' · ' + esc(fmtTime(r.datetime)) + '</div><div class="li-sub">' + r.items + ' barang · ' + esc(r.cashier) + '</div></div>' +
+      '<span class="badge b-gray">' + esc(r.method) + '</span><b class="num">' + esc(rp(r.total)) + '</b></li>').join('') + '</ul>'
+      : emptyState('cart', 'Belum ada transaksi hari ini', 'Buka menu Kasir untuk mulai berjualan.', '<button class="btn btn-primary" data-go="kasir">' + icon('cart') + 'Buka Kasir</button>');
+  },
+  async story() {
+    const btn = $('#dbStoryBtn');
+    btn.disabled = true;
+    $('#dbStory').innerHTML = '<span class="spinner sm" style="display:inline-block;vertical-align:middle"></span> Menyusun cerita omzet…';
+    $('#dbStoryBadge').innerHTML = '';
+    try {
+      const r = await api('apiAiCeritaOmzet');
+      $('#dbStory').classList.remove('muted');
+      $('#dbStory').innerHTML = '<p style="font-size:1.02rem">' + esc(r.text) + '</p>' + (r.note ? '<p class="muted small mb0">' + esc(r.note) + '</p>' : '');
+      $('#dbStoryBadge').innerHTML = aiBadge(r.source);
+      btn.innerHTML = icon('refresh') + 'Buat ulang';
+    } catch (e) {
+      $('#dbStory').innerHTML = '<span class="muted">' + esc(e.message) + '</span>';
+    } finally { btn.disabled = false; }
+  }
+};
+</script>

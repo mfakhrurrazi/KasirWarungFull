@@ -1,0 +1,18 @@
+{
+  "name": "kasirwarung-ai",
+  "version": "1.0.0",
+  "private": true,
+  "description": "KasirWarung AI — POS, stock and kasbon book for Indonesian warung (Google Apps Script + Google Sheets). Made by Piyu.",
+  "scripts": {
+    "test": "TZ=Asia/Jakarta node --test tests/server.test.js",
+    "test:ui": "TZ=Asia/Jakarta node tests/ui.e2e.js",
+    "build:template": "python3 tools/build_template.py",
+    "license": "node tools/generate-license.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.56.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

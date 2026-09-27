@@ -1,0 +1,266 @@
+<section class="page" id="page-pengaturan" hidden>
+  <div class="page-head">
+    <div>
+      <h1>Pengaturan</h1>
+      <p class="sub">Profil warung, AI, pengguna, backup dan log aktivitas.</p>
+    </div>
+  </div>
+  <div class="tabs" id="stTabs">
+    <button data-tab="profil" class="on">Profil</button>
+    <button data-tab="ai">AI</button>
+    <button data-tab="users">Pengguna</button>
+    <button data-tab="data">Data &amp; Backup</button>
+    <button data-tab="log">Log aktivitas</button>
+  </div>
+
+  <div data-panel="profil" class="card">
+    <div class="row">
+      <label class="field"><span>Nama warung</span><input id="sgName" maxlength="60"></label>
+      <label class="field"><span>Nomor WhatsApp warung</span><input id="sgWa" inputmode="tel" maxlength="20"></label>
+    </div>
+    <label class="field"><span>Alamat</span><input id="sgAddr" maxlength="160"></label>
+    <label class="field"><span>URL logo (https://)</span><input id="sgLogo" maxlength="500"><span class="hint">Tip: unggah logo ke Google Drive, bagikan "Siapa saja yang memiliki link", lalu pakai link gambar langsung.</span></label>
+    <div class="row">
+      <label class="field"><span>Pajak (%)</span><input id="sgTax" inputmode="decimal"></label>
+      <label class="field"><span>Jatuh tempo kasbon (hari)</span><input id="sgDue" inputmode="numeric"></label>
+      <label class="field"><span>Peringatan kedaluwarsa (hari)</span><input id="sgExp" inputmode="numeric"></label>
+    </div>
+    <label class="field"><span>Catatan di struk</span><input id="sgFooter" maxlength="160"></label>
+    <button class="btn btn-primary" id="sgSave"><i data-icon="check"></i>Simpan profil</button>
+  </div>
+
+  <div data-panel="ai" hidden>
+    <div class="card">
+      <label class="switch"><span>Fitur AI aktif<br><small class="muted">Bila mati, semua tombol AI memakai hitungan/template otomatis.</small></span><input type="checkbox" id="aiToggle"></label>
+      <div id="aiStatus" class="mt1"></div>
+      <button class="btn btn-yellow mt1" id="aiTest"><i data-icon="sparkle"></i>Tes koneksi AI</button>
+      <div id="aiTestOut" class="mt1"></div>
+    </div>
+    <div class="card mt2">
+      <h3>Cara mengatur kunci AI</h3>
+      <ol class="small">
+        <li>Buka editor Apps Script → <b>Project Settings</b> (ikon roda gigi) → <b>Script Properties</b>.</li>
+        <li>Tambahkan <span class="kbd">AI_API_KEY</span>, <span class="kbd">AI_MODEL</span> dan (opsional) <span class="kbd">AI_BASE_URL</span>.</li>
+        <li>Kunci tidak pernah disimpan di spreadsheet dan tidak pernah dikirim ke browser.</li>
+      </ol>
+    </div>
+  </div>
+
+  <div data-panel="users" hidden class="card">
+    <div class="card-head"><h2>Pengguna</h2><button class="btn btn-sm btn-primary" id="usAdd"><i data-icon="plus"></i>Tambah kasir</button></div>
+    <div id="usList"></div>
+  </div>
+
+  <div data-panel="data" hidden>
+    <div class="grid g2">
+      <div class="card">
+        <h2>Backup ke Google Drive</h2>
+        <div id="bkStatus" class="mt1"></div>
+        <label class="switch"><span>Backup otomatis tiap hari (23:00 WIB)</span><input type="checkbox" id="bkAuto"></label>
+        <button class="btn btn-green" id="bkNow"><i data-icon="cloud"></i>Backup sekarang</button>
+      </div>
+      <div class="card">
+        <h2>Database</h2>
+        <p class="small muted">Spreadsheet <b>DB_KasirWarung</b> menyimpan semua data. Sheet Users & Settings diproteksi.</p>
+        <div class="actions"><a class="btn" id="dbOpen" target="_blank" rel="noopener" href="#"><i data-icon="file"></i>Buka spreadsheet</a>
+          <button class="btn" id="dbRepair"><i data-icon="refresh"></i>Perbaiki struktur</button>
+          <button class="btn" data-go="setup"><i data-icon="gift"></i>Setup Wizard</button></div>
+      </div>
+    </div>
+    <div class="card mt2" style="border:2px dashed #FECACA">
+      <h2>Data demo &amp; reset</h2>
+      <p class="small muted">Hanya untuk Owner. Semua tindakan tercatat di log aktivitas. Sebaiknya backup dulu.</p>
+      <div class="actions">
+        <button class="btn btn-yellow" id="dmLoad"><i data-icon="sparkle"></i>Muat data demo 28 hari</button>
+        <button class="btn btn-danger" id="dmReset"><i data-icon="trash"></i>Reset data</button>
+      </div>
+    </div>
+  </div>
+
+  <div data-panel="log" hidden class="card">
+    <div class="card-head"><h2>Log aktivitas</h2><button class="btn btn-sm" id="lgReload"><i data-icon="refresh"></i>Muat ulang</button></div>
+    <div id="lgList"></div>
+  </div>
+</section>
+<script>
+Pages.pengaturan = {
+  tab: 'profil', info: null,
+  init() {
+    $('#stTabs').addEventListener('click', (e) => { const b = e.target.closest('[data-tab]'); if (b) this.showTab(b.getAttribute('data-tab')); });
+    $('#sgSave').addEventListener('click', () => this.saveProfile());
+    $('#aiToggle').addEventListener('change', () => this.saveAiToggle());
+    $('#aiTest').addEventListener('click', () => this.testAi());
+    $('#usAdd').addEventListener('click', () => this.editUser(null));
+    $('#usList').addEventListener('click', (e) => { const b = e.target.closest('[data-user]'); if (b) this.editUser(this.users.find((u) => u.username === b.getAttribute('data-user'))); });
+    $('#bkNow').addEventListener('click', () => this.backupNow());
+    $('#bkAuto').addEventListener('change', () => this.setAuto());
+    $('#dbRepair').addEventListener('click', () => this.repair());
+    $('#dmLoad').addEventListener('click', () => this.loadDemo());
+    $('#dmReset').addEventListener('click', () => this.reset());
+    $('#lgReload').addEventListener('click', () => this.logs());
+  },
+  async enter() {
+    this.showTab(this.tab);
+    try {
+      const d = await api('apiGetSettings');
+      this.info = d;
+      const s = d.settings;
+      $('#sgName').value = s.BUSINESS_NAME || '';
+      $('#sgWa').value = phoneLocal(s.WHATSAPP);
+      $('#sgAddr').value = s.BUSINESS_ADDRESS || '';
+      $('#sgLogo').value = s.LOGO_URL || '';
+      $('#sgTax').value = s.TAX_PERCENT;
+      $('#sgDue').value = s.KASBON_DUE_DAYS;
+      $('#sgExp').value = s.EXPIRY_WARN_DAYS;
+      $('#sgFooter').value = s.RECEIPT_FOOTER || '';
+      $('#aiToggle').checked = !!s.AI_ENABLED;
+      $('#dbOpen').href = d.dbUrl;
+      this.renderAi(d.ai);
+      this.renderBackup(d.backup);
+    } catch (e) { toast(e.message, 'err'); }
+  },
+  showTab(t) {
+    this.tab = t;
+    $$('#stTabs button').forEach((b) => b.classList.toggle('on', b.getAttribute('data-tab') === t));
+    $$('#page-pengaturan [data-panel]').forEach((p) => { p.hidden = p.getAttribute('data-panel') !== t; });
+    if (t === 'users') this.loadUsers();
+    if (t === 'log') this.logs();
+  },
+  applySettings(s) {
+    App.settings = Object.assign({}, App.settings, s);
+    App.boot.business = { name: s.BUSINESS_NAME, logo: s.LOGO_URL, address: s.BUSINESS_ADDRESS, whatsapp: s.WHATSAPP };
+    App.renderHeader();
+  },
+  async saveProfile() {
+    const payload = {
+      BUSINESS_NAME: $('#sgName').value, WHATSAPP: $('#sgWa').value, BUSINESS_ADDRESS: $('#sgAddr').value, LOGO_URL: $('#sgLogo').value.trim(),
+      TAX_PERCENT: $('#sgTax').value, KASBON_DUE_DAYS: $('#sgDue').value, EXPIRY_WARN_DAYS: $('#sgExp').value, RECEIPT_FOOTER: $('#sgFooter').value
+    };
+    try {
+      const s = await withBusy('Menyimpan…', () => api('apiSaveSettings', payload));
+      this.applySettings(s);
+      toast('Profil warung tersimpan', 'ok');
+    } catch (e) { /* toast */ }
+  },
+  renderAi(a) {
+    $('#aiStatus').innerHTML =
+      '<ul class="list"><li><div class="li-main">Kunci API (AI_API_KEY)</div>' + (a.keySet ? '<span class="badge b-green">Terpasang</span>' : '<span class="badge b-red">Belum diatur</span>') + '</li>' +
+      '<li><div class="li-main">Model (AI_MODEL)</div><span class="badge ' + (a.model ? 'b-green' : 'b-red') + '">' + esc(a.model || 'Belum diatur') + '</span></li>' +
+      '<li><div class="li-main">Server AI</div><span class="small">' + esc(a.host) + '</span></li></ul>' +
+      (!a.https ? '<div class="notice n-warn">' + icon('shield') + '<span>Endpoint AI memakai <b>HTTP biasa</b>. Untuk produksi, pasang proxy HTTPS (mis. Cloudflare Tunnel / Nginx + Let\'s Encrypt) lalu ganti AI_BASE_URL ke alamat https://.</span></div>' : '') +
+      (!a.configured ? '<div class="notice n-info">' + icon('alert') + '<span>Tanpa kunci AI, aplikasi tetap berjalan penuh — tombol AI memakai hitungan & template otomatis (badge "AI tidak aktif").</span></div>' : '');
+  },
+  async saveAiToggle() {
+    try {
+      const s = await withBusy('Menyimpan…', () => api('apiSaveSettings', { AI_ENABLED: $('#aiToggle').checked }));
+      this.applySettings(s);
+      toast('AI ' + (s.AI_ENABLED ? 'diaktifkan' : 'dimatikan'), 'ok');
+    } catch (e) { $('#aiToggle').checked = !$('#aiToggle').checked; }
+  },
+  async testAi() {
+    $('#aiTestOut').innerHTML = '<div class="notice n-info"><span class="spinner sm"></span><span>Menghubungi server AI…</span></div>';
+    try {
+      const r = await api('apiAiTest');
+      $('#aiTestOut').innerHTML = r.ok
+        ? '<div class="notice n-ok">' + icon('check') + '<span>Tersambung dalam ' + (r.ms / 1000).toFixed(1).replace('.', ',') + ' detik. Jawaban: "' + esc(r.reply) + '"</span></div>'
+        : '<div class="notice n-err">' + icon('alert') + '<span>' + esc(r.reason) + '</span></div>';
+      this.renderAi(r.status);
+    } catch (e) { $('#aiTestOut').innerHTML = '<div class="notice n-err">' + esc(e.message) + '</div>'; }
+  },
+  async loadUsers() {
+    $('#usList').innerHTML = skeleton(4);
+    try {
+      this.users = await api('apiUsers');
+      $('#usList').innerHTML = '<table class="rtable"><thead><tr><th>Nama</th><th>Username</th><th>Peran</th><th>Status</th><th></th></tr></thead><tbody>' +
+        this.users.map((u) => '<tr' + (u.active ? '' : ' style="opacity:.6"') + '><td class="td-title">' + esc(u.full_name) + '</td><td data-label="Username">@' + esc(u.username) + '</td>' +
+          '<td data-label="Peran"><span class="badge ' + (u.role === 'Owner' ? 'b-orange' : 'b-gray') + '">' + esc(u.role) + '</span></td>' +
+          '<td data-label="Status"><span class="badge ' + (u.active ? 'b-green' : 'b-red') + '">' + (u.active ? 'Aktif' : 'Nonaktif') + '</span></td>' +
+          '<td class="td-actions"><button class="btn btn-sm" data-user="' + esc(u.username) + '">' + icon('edit') + 'Ubah</button></td></tr>').join('') + '</tbody></table>';
+    } catch (e) { $('#usList').innerHTML = '<div class="notice n-err">' + esc(e.message) + '</div>'; }
+  },
+  editUser(u) {
+    const m = openModal({
+      title: u ? 'Ubah pengguna' : 'Tambah pengguna',
+      body: '<label class="field"><span>Username</span><input id="ufUser" maxlength="30" autocapitalize="none" value="' + esc(u ? u.username : '') + '"' + (u ? ' disabled' : '') + ' placeholder="mis. sari"><span class="hint">Huruf kecil, angka, titik atau garis bawah.</span></label>' +
+        '<label class="field"><span>Nama lengkap</span><input id="ufName" maxlength="60" value="' + esc(u ? u.full_name : '') + '"></label>' +
+        '<label class="field"><span>Peran</span><select id="ufRole"><option' + (u && u.role === 'Kasir' || !u ? ' selected' : '') + '>Kasir</option><option' + (u && u.role === 'Owner' ? ' selected' : '') + '>Owner</option></select>' +
+        '<span class="hint">Kasir: jualan, pelanggan & kasbon, lihat stok. Owner: semua menu.</span></label>' +
+        '<label class="field"><span>' + (u ? 'Reset password (kosongkan bila tidak diubah)' : 'Password') + '</span><input id="ufPw" type="password" autocomplete="new-password" maxlength="100"></label>' +
+        '<label class="switch"><span>Akun aktif</span><input type="checkbox" id="ufActive"' + (!u || u.active ? ' checked' : '') + '></label>',
+      foot: '<button class="btn" data-close>Batal</button><button class="btn btn-primary" id="ufSave">' + icon('check') + 'Simpan</button>'
+    });
+    $('#ufSave', m.el).addEventListener('click', async () => {
+      const payload = { username: $('#ufUser', m.el).value.trim().toLowerCase(), full_name: $('#ufName', m.el).value, role: $('#ufRole', m.el).value, password: $('#ufPw', m.el).value, active: $('#ufActive', m.el).checked };
+      try {
+        await withBusy('Menyimpan…', () => api('apiSaveUser', payload));
+        m.close();
+        toast('Pengguna tersimpan', 'ok');
+        this.loadUsers();
+      } catch (e) { /* toast */ }
+    });
+  },
+  renderBackup(b) {
+    $('#bkAuto').checked = !!b.trigger;
+    $('#bkStatus').innerHTML = '<ul class="list"><li><div class="li-main">Backup terakhir</div><b>' + esc(b.last ? fmtDateTime(b.last) : 'Belum pernah') + '</b></li>' +
+      '<li><div class="li-main">Backup otomatis</div><span class="badge ' + (b.trigger ? 'b-green' : 'b-gray') + '">' + (b.trigger ? 'Aktif' : 'Mati') + '</span></li></ul>' +
+      (b.folderUrl ? '<a class="btn btn-sm btn-ghost" target="_blank" rel="noopener" href="' + esc(b.folderUrl) + '">Buka folder backup →</a>' : '') +
+      '<p class="small muted">Menyimpan 30 salinan terakhir; yang lebih lama dipindah ke sampah Drive.</p>';
+  },
+  async backupNow() {
+    try {
+      const r = await withBusy('Membuat backup… (±20 detik)', () => api('apiBackupNow'));
+      toast('Backup tersimpan: ' + r.name, 'ok');
+      this.renderBackup({ trigger: $('#bkAuto').checked, last: r.at, folderUrl: r.folderUrl });
+    } catch (e) { /* toast */ }
+  },
+  async setAuto() {
+    try {
+      const r = await withBusy('Mengatur jadwal…', () => api('apiSetBackupTrigger', $('#bkAuto').checked));
+      this.renderBackup(r);
+      toast(r.trigger ? 'Backup otomatis aktif tiap 23:00' : 'Backup otomatis dimatikan', 'ok');
+    } catch (e) { $('#bkAuto').checked = !$('#bkAuto').checked; }
+  },
+  async repair() {
+    try {
+      const r = await withBusy('Memeriksa struktur database…', () => api('apiRepairDatabase'));
+      toast(r.created.length ? 'Sheet dibuat: ' + r.created.join(', ') : 'Struktur database sudah lengkap', 'ok');
+    } catch (e) { /* toast */ }
+  },
+  async loadDemo() {
+    const v = await confirmBox({ title: 'Muat data demo?', danger: true, okText: 'Muat data demo', message: 'Produk, pelanggan, penjualan, kasbon & riwayat stok akan DIGANTI dengan data demo 28 hari. Pengguna dan pengaturan tidak berubah.', input: { label: 'Ketik DEMO untuk konfirmasi', match: 'DEMO' } });
+    if (!v) return;
+    try {
+      await withBusy('Memuat data demo…', () => api('apiLoadDemo', 'DEMO'));
+      App.products = null; App.customers = null;
+      toast('Data demo dimuat', 'ok');
+    } catch (e) { /* toast */ }
+  },
+  async reset() {
+    let keep = true;
+    const v = await confirmBox({
+      title: 'Reset data?', danger: true, okText: 'Hapus data',
+      message: 'Penjualan, kasbon, pelanggan, riwayat stok dan log AI akan DIHAPUS permanen. Pengguna & pengaturan tetap.',
+      html: '<label class="switch"><span>Simpan katalog produk (stok jadi 0)</span><input type="checkbox" id="rsKeep" checked></label>',
+      input: { label: 'Ketik RESET untuk konfirmasi', match: 'RESET' },
+      collect: (el) => { keep = $('#rsKeep', el).checked; }
+    });
+    if (!v) return;
+    try {
+      await withBusy('Menghapus data…', () => api('apiResetData', 'RESET', keep));
+      App.products = null; App.customers = null;
+      toast('Data direset', 'ok');
+    } catch (e) { /* toast */ }
+  },
+  async logs() {
+    $('#lgList').innerHTML = skeleton(6);
+    try {
+      const list = await api('apiActivity', 200);
+      $('#lgList').innerHTML = list.length ? '<table class="rtable"><thead><tr><th>Aksi</th><th>Waktu</th><th>Pengguna</th><th>Referensi</th><th class="n">Nominal</th><th>Detail</th></tr></thead><tbody>' +
+        list.map((l) => '<tr><td class="td-title">' + esc(l.action) + '</td><td data-label="Waktu">' + esc(fmtDateTime(l.at)) + '</td><td data-label="Pengguna">' + esc(l.user) + '</td>' +
+          '<td data-label="Referensi">' + esc(l.ref_id) + '</td><td class="n" data-label="Nominal">' + (l.amount === null ? '' : esc(rp(l.amount))) + '</td>' +
+          '<td data-label="Detail" class="small" style="max-width:320px;word-break:break-word">' + esc(l.details.length > 160 ? l.details.slice(0, 160) + '…' : l.details) + '</td></tr>').join('') + '</tbody></table>'
+        : emptyState('book', 'Belum ada aktivitas', '');
+    } catch (e) { $('#lgList').innerHTML = '<div class="notice n-err">' + esc(e.message) + '</div>'; }
+  }
+};
+</script>

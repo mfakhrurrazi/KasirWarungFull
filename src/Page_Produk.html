@@ -1,0 +1,235 @@
+<section class="page" id="page-produk" hidden>
+  <div class="page-head">
+    <div>
+      <h1>Produk</h1>
+      <p class="sub" id="prSub">Daftar barang, harga bertingkat dan stok.</p>
+    </div>
+    <div class="actions" id="prOwnerActions" hidden>
+      <button class="btn btn-primary" id="prAdd"><i data-icon="plus"></i>Tambah</button>
+      <button class="btn" id="prImport"><i data-icon="upload"></i>Impor CSV</button>
+      <button class="btn" id="prExport"><i data-icon="download"></i>Ekspor</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="search"><i data-icon="search"></i><input id="prSearch" type="search" placeholder="Cari nama, barcode atau kategori…" autocomplete="off"></div>
+    <div class="chips mt1" id="prFilters"></div>
+    <div id="prTable" class="mt1"></div>
+    <div class="text-center" id="prMore"></div>
+  </div>
+</section>
+<script>
+Pages.produk = {
+  list: [], filter: 'Semua', limit: 150,
+  init() {
+    $('#prSearch').addEventListener('input', debounce(() => { this.limit = 150; this.render(); }, 120));
+    $('#prFilters').addEventListener('click', (e) => {
+      const c = e.target.closest('[data-f]');
+      if (c) { this.filter = c.getAttribute('data-f'); this.limit = 150; this.render(); }
+    });
+    $('#prTable').addEventListener('click', (e) => {
+      const ed = e.target.closest('[data-edit]');
+      if (ed) { this.edit(ed.getAttribute('data-edit')); return; }
+      const tg = e.target.closest('[data-toggle]');
+      if (tg) this.toggleActive(tg.getAttribute('data-toggle'));
+    });
+    $('#prMore').addEventListener('click', (e) => { if (e.target.closest('button')) { this.limit += 300; this.render(); } });
+    $('#prAdd').addEventListener('click', () => this.edit(null));
+    $('#prImport').addEventListener('click', () => this.importDialog());
+    $('#prExport').addEventListener('click', () => this.exportCsv());
+  },
+  async enter() {
+    const owner = App.can('product.edit');
+    $('#prOwnerActions').hidden = !owner;
+    $('#prSub').textContent = owner ? 'Daftar barang, harga bertingkat dan stok.' : 'Lihat harga dan stok barang (hanya baca).';
+    $('#prTable').innerHTML = skeleton(6);
+    try {
+      this.list = await App.loadProducts(true);
+      this.render();
+    } catch (e) { $('#prTable').innerHTML = '<div class="notice n-err">' + esc(e.message) + '</div>'; }
+  },
+  render() {
+    const filters = ['Semua', 'Stok menipis', 'Hampir kedaluwarsa'].concat(App.can('product.edit') ? ['Nonaktif'] : []).concat(['Sembako', 'Minuman', 'Rokok', 'Snack', 'Toiletries', 'Gas & Air', 'Lainnya']);
+    $('#prFilters').innerHTML = filters.map((f) => '<button class="chip ' + (f === this.filter ? 'active' : '') + '" data-f="' + esc(f) + '">' + esc(f) + '</button>').join('');
+    const q = $('#prSearch').value.trim().toLowerCase();
+    const tokens = q ? q.split(/\s+/) : [];
+    const today = todayStr();
+    const soon = todayStr(Number(App.settings.EXPIRY_WARN_DAYS) || 30);
+    const rows = this.list.filter((p) => {
+      const s = (p.name + ' ' + p.barcode + ' ' + p.category + ' ' + p.product_id).toLowerCase();
+      if (!tokens.every((t) => s.indexOf(t) >= 0)) return false;
+      if (this.filter === 'Nonaktif') return !p.active;
+      if (!p.active && !App.can('product.edit')) return false;
+      if (this.filter === 'Stok menipis') return p.active && p.stock <= p.min_stock;
+      if (this.filter === 'Hampir kedaluwarsa') return p.active && p.expiry_date && p.expiry_date <= soon;
+      if (this.filter !== 'Semua') return p.category === this.filter;
+      return true;
+    });
+    const owner = App.can('product.edit');
+    if (!rows.length) {
+      $('#prTable').innerHTML = emptyState('box', 'Tidak ada produk', this.list.length ? 'Ubah kata kunci atau filter.' : 'Tambah produk satu per satu atau impor 300 barang dari template CSV.',
+        owner && !this.list.length ? '<button class="btn btn-primary" id="prEmptyImport">' + icon('upload') + 'Impor template 300 barang</button>' : '');
+      const b = $('#prEmptyImport');
+      if (b) b.addEventListener('click', () => this.importDialog());
+      $('#prMore').innerHTML = '';
+      return;
+    }
+    const tier = (p) => {
+      const t = [];
+      if (p.price_bundle > 0) t.push('<span class="small nowrap">Paket ≥' + esc(fmtNum(p.bundle_qty)) + ': ' + esc(rp(p.price_bundle)) + '</span>');
+      if (p.price_wholesale > 0) t.push('<span class="small nowrap">Grosir ≥' + esc(fmtNum(p.wholesale_qty)) + ': ' + esc(rp(p.price_wholesale)) + '</span>');
+      return t.join('<br>');
+    };
+    $('#prTable').innerHTML = '<p class="small muted">' + rows.length + ' produk</p><div class="table-wrap"><table class="rtable"><thead><tr><th>Produk</th><th>Kategori</th><th>Harga eceran</th><th>Harga bertingkat</th>' +
+      (owner ? '<th class="n">Modal</th>' : '') + '<th class="n">Stok</th><th>Kedaluwarsa</th>' + (owner ? '<th></th>' : '') + '</tr></thead><tbody>' +
+      rows.slice(0, this.limit).map((p) => {
+        const low = p.stock <= p.min_stock;
+        const exp = p.expiry_date ? (p.expiry_date < today ? 'b-red' : (p.expiry_date <= soon ? 'b-yellow' : '')) : '';
+        return '<tr' + (p.active ? '' : ' style="opacity:.55"') + '><td class="td-title"><div><div>' + esc(p.name) + (p.active ? '' : ' <span class="badge b-gray">Nonaktif</span>') + '</div>' +
+          '<div class="small muted" style="font-weight:600">' + esc(p.barcode || 'tanpa barcode') + ' · ' + esc(p.unit) + '</div></div></td>' +
+          '<td data-label="Kategori"><span class="badge b-gray"><i style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + (CAT_COLORS[p.category] || '#999') + '"></i>' + esc(p.category) + '</span></td>' +
+          '<td data-label="Eceran"><span class="price-tag sm">' + esc(rp(p.price_retail)) + '</span></td>' +
+          '<td data-label="Bertingkat">' + (tier(p) || '<span class="muted small">-</span>') + '</td>' +
+          (owner ? '<td class="n" data-label="Modal">' + esc(rp(p.cost_price)) + '</td>' : '') +
+          '<td class="n" data-label="Stok"><span class="badge ' + (p.stock <= 0 ? 'b-red' : (low ? 'b-yellow' : 'b-green')) + '">' + esc(fmtNum(p.stock)) + ' ' + esc(p.unit) + '</span></td>' +
+          '<td data-label="Kedaluwarsa">' + (p.expiry_date ? '<span class="badge ' + (exp || 'b-gray') + '">' + esc(fmtDate(p.expiry_date)) + '</span>' : '<span class="muted small">-</span>') + '</td>' +
+          (owner ? '<td class="td-actions"><button class="btn btn-sm" data-edit="' + esc(p.product_id) + '">' + icon('edit') + 'Ubah</button>' +
+            '<button class="btn btn-sm btn-ghost" data-toggle="' + esc(p.product_id) + '">' + (p.active ? 'Nonaktifkan' : 'Aktifkan') + '</button></td>' : '') + '</tr>';
+      }).join('') + '</tbody></table></div>';
+    $('#prMore').innerHTML = rows.length > this.limit ? '<button class="btn btn-sm mt1">Tampilkan lebih banyak (' + (rows.length - this.limit) + ')</button>' : '';
+  },
+
+  edit(id) {
+    const p = id ? this.list.find((x) => x.product_id === id) : null;
+    const v = (k, d) => esc(p ? (p[k] === 0 ? '' : p[k]) : (d === undefined ? '' : d));
+    const opt = (list, cur) => list.map((x) => '<option' + (x === cur ? ' selected' : '') + '>' + esc(x) + '</option>').join('');
+    const m = openModal({
+      title: p ? 'Ubah produk' : 'Tambah produk',
+      wide: true,
+      body: '<div class="row"><label class="field" style="flex:2 1 260px"><span>Nama produk</span><input id="pfName" maxlength="120" value="' + v('name') + '" placeholder="Indomie Goreng 85 g"></label>' +
+        '<label class="field"><span>Barcode</span><input id="pfBarcode" maxlength="32" value="' + v('barcode') + '" placeholder="Scan / ketik" inputmode="numeric"></label></div>' +
+        '<div class="row"><label class="field"><span>Kategori</span><select id="pfCat">' + opt(['Sembako', 'Minuman', 'Rokok', 'Snack', 'Toiletries', 'Gas & Air', 'Lainnya'], p ? p.category : 'Sembako') + '</select></label>' +
+        '<label class="field"><span>Satuan</span><select id="pfUnit">' + opt(['pcs', 'renteng', 'dus', 'kg', 'liter'], p ? p.unit : 'pcs') + '</select></label>' +
+        '<label class="field"><span>Harga modal / satuan</span><input id="pfCost" inputmode="numeric" value="' + v('cost_price') + '" placeholder="0"></label></div>' +
+        '<div class="card tint-yellow" style="box-shadow:none;border:1px dashed #FDE68A"><h3>Harga jual per satuan</h3><div class="row">' +
+        '<label class="field"><span>Eceran</span><input id="pfRetail" inputmode="numeric" value="' + v('price_retail') + '" placeholder="3.500"></label>' +
+        '<label class="field"><span>Paket (harga/satuan)</span><input id="pfBundle" inputmode="numeric" value="' + v('price_bundle') + '" placeholder="opsional"></label>' +
+        '<label class="field"><span>Mulai jumlah paket</span><input id="pfBundleQty" inputmode="decimal" value="' + v('bundle_qty') + '" placeholder="mis. 5"></label></div><div class="row">' +
+        '<label class="field"><span>Grosir (harga/satuan)</span><input id="pfWhole" inputmode="numeric" value="' + v('price_wholesale') + '" placeholder="opsional"></label>' +
+        '<label class="field"><span>Mulai jumlah grosir</span><input id="pfWholeQty" inputmode="decimal" value="' + v('wholesale_qty') + '" placeholder="mis. 40"></label><span></span></div>' +
+        '<p class="small muted mb0">Kasir otomatis memakai harga termurah saat jumlah mencapai batas paket/grosir.</p></div>' +
+        '<div class="row mt2">' + (p ? '<div class="field"><span class="field-label">Stok sekarang</span><div class="badge b-green" style="font-size:.95rem;padding:10px 14px">' + esc(fmtNum(p.stock)) + ' ' + esc(p.unit) + '</div><span class="hint">Ubah stok lewat Stok Masuk / Opname.</span></div>'
+          : '<label class="field"><span>Stok awal</span><input id="pfStock" inputmode="decimal" placeholder="0"></label>') +
+        '<label class="field"><span>Stok minimum</span><input id="pfMin" inputmode="decimal" value="' + v('min_stock', 5) + '"></label>' +
+        '<label class="field"><span>Tanggal kedaluwarsa</span><input id="pfExp" type="date" value="' + esc(p ? p.expiry_date : '') + '"></label></div>' +
+        '<label class="switch"><span>Produk aktif (tampil di kasir)</span><input type="checkbox" id="pfActive"' + (!p || p.active ? ' checked' : '') + '></label>',
+      foot: '<button class="btn" data-close>Batal</button><button class="btn btn-primary" id="pfSave">' + icon('check') + 'Simpan</button>'
+    });
+    const el = m.el;
+    $('#pfSave', el).addEventListener('click', async () => {
+      const payload = {
+        product_id: p ? p.product_id : '', name: $('#pfName', el).value, barcode: $('#pfBarcode', el).value.trim(),
+        category: $('#pfCat', el).value, unit: $('#pfUnit', el).value, cost_price: parseNum($('#pfCost', el).value),
+        price_retail: parseNum($('#pfRetail', el).value), price_bundle: parseNum($('#pfBundle', el).value), bundle_qty: parseNum($('#pfBundleQty', el).value),
+        price_wholesale: parseNum($('#pfWhole', el).value), wholesale_qty: parseNum($('#pfWholeQty', el).value),
+        stock: p ? 0 : parseNum(($('#pfStock', el) || {}).value), min_stock: parseNum($('#pfMin', el).value),
+        expiry_date: $('#pfExp', el).value, active: $('#pfActive', el).checked
+      };
+      if (!payload.name.trim()) { toast('Nama produk wajib diisi', 'err'); return; }
+      if (!(payload.price_retail > 0)) { toast('Harga eceran wajib diisi', 'err'); return; }
+      try {
+        const r = await withBusy('Menyimpan produk…', () => api('apiSaveProduct', payload));
+        m.close();
+        toast(p ? 'Produk diperbarui' : 'Produk ditambahkan', 'ok');
+        if (r.warning) toast(r.warning, 'err');
+        this.enter();
+      } catch (e) { /* toast shown */ }
+    });
+  },
+
+  async toggleActive(id) {
+    const p = this.list.find((x) => x.product_id === id);
+    if (!p) return;
+    if (p.active && !(await confirmBox({ title: 'Nonaktifkan produk?', message: '"' + p.name + '" tidak akan tampil di kasir. Riwayat penjualan tetap tersimpan.', okText: 'Nonaktifkan', danger: true }))) return;
+    try {
+      await withBusy('Menyimpan…', () => api('apiSetProductActive', id, !p.active));
+      toast(p.active ? 'Produk dinonaktifkan' : 'Produk diaktifkan', 'ok');
+      this.enter();
+    } catch (e) { /* toast shown */ }
+  },
+
+  importDialog() {
+    let rows = [];
+    const m = openModal({
+      title: 'Impor produk dari CSV',
+      wide: true,
+      body: '<ol class="small" style="padding-left:1.2rem"><li>Unduh <b>template 300 barang warung</b> (sembako, minuman, rokok, snack, toiletries, gas & air, lainnya).</li>' +
+        '<li>Buka di Excel / Google Sheets, sesuaikan harga & stok, hapus barang yang tidak dijual.</li><li>Simpan sebagai CSV lalu pilih file di bawah.</li></ol>' +
+        '<div class="actions"><button class="btn" id="imTpl">' + icon('download') + 'Unduh template 300</button><button class="btn btn-yellow" id="imTplDirect">' + icon('sparkle') + 'Langsung pakai template</button></div>' +
+        '<label class="field mt2"><span>File CSV</span><input type="file" id="imFile" accept=".csv,text/csv"></label>' +
+        '<p class="small muted">Kolom: barcode, name, category, unit, price_retail, price_bundle, bundle_qty, price_wholesale, wholesale_qty, cost_price, stock, min_stock, expiry_date (dd/MM/yyyy). ' +
+        'Produk dengan barcode/nama yang sama akan diperbarui.</p>' +
+        '<label class="switch"><span>Perbarui stok produk yang sudah ada<br><small class="muted">Biarkan mati agar stok sekarang tidak tertimpa angka di CSV.</small></span><input type="checkbox" id="imStock"></label><div id="imPreview"></div>',
+      foot: '<button class="btn" data-close>Batal</button><button class="btn btn-primary" id="imGo" disabled>' + icon('upload') + 'Impor</button>'
+    });
+    const el = m.el;
+    const preview = () => {
+      $('#imPreview', el).innerHTML = rows.length ? '<div class="notice n-info">' + icon('file') + '<span><b>' + rows.length + ' baris</b> siap diimpor. Contoh: ' + esc(rows.slice(0, 3).map((r) => r.name).join(', ')) + '…</span></div>' : '';
+      $('#imGo', el).disabled = !rows.length;
+    };
+    $('#imTpl', el).addEventListener('click', async () => {
+      try {
+        const r = await withBusy('Menyiapkan template…', () => api('apiTemplateCsv'));
+        offerFile(r.filename, r.csv, 'text/csv');
+      } catch (e) { /* toast */ }
+    });
+    $('#imTplDirect', el).addEventListener('click', async () => {
+      try {
+        const r = await withBusy('Membaca template…', () => api('apiTemplateCsv'));
+        rows = parseCsv(r.csv);
+        preview();
+        toast('Template dimuat — tekan Impor', 'ok');
+      } catch (e) { /* toast */ }
+    });
+    $('#imFile', el).addEventListener('change', (e) => {
+      const f = e.target.files[0];
+      if (!f) return;
+      if (f.size > 3 * 1024 * 1024) { toast('File terlalu besar (maks 3 MB)', 'err'); return; }
+      const reader = new FileReader();
+      reader.onload = () => {
+        rows = parseCsv(reader.result);
+        if (rows.length && !('name' in rows[0])) { toast('Kolom "name" tidak ditemukan. Pakai template.', 'err'); rows = []; }
+        if (rows.length > 2000) { toast('Maksimal 2.000 baris per impor', 'err'); rows = []; }
+        preview();
+      };
+      reader.readAsText(f, 'utf-8');
+    });
+    $('#imGo', el).addEventListener('click', async () => {
+      try {
+        const r = await withBusy('Mengimpor ' + rows.length + ' baris…', () => api('apiImportProducts', rows, $('#imStock', el).checked));
+        m.close();
+        App.products = null;
+        const errs = r.errors || [];
+        openModal({
+          title: 'Hasil impor',
+          body: '<div class="notice n-ok">' + icon('check') + '<span><b>' + r.created + '</b> produk baru, <b>' + r.updated + '</b> diperbarui.</span></div>' +
+            (r.errorCount ? '<div class="notice n-warn">' + icon('alert') + '<span>' + r.errorCount + ' baris dilewati:</span></div><ul class="list">' +
+              errs.map((x) => '<li><div class="li-main"><div class="li-title">Baris ' + x.line + ' · ' + esc(x.name) + '</div><div class="li-sub">' + esc(x.error) + '</div></div></li>').join('') + '</ul>' : ''),
+          noFocus: true
+        });
+        this.enter();
+      } catch (e) { /* toast */ }
+    });
+  },
+
+  exportCsv() {
+    const cols = [
+      { t: 'product_id', k: 'product_id' }, { t: 'barcode', k: 'barcode' }, { t: 'name', k: 'name' }, { t: 'category', k: 'category' }, { t: 'unit', k: 'unit' },
+      { t: 'price_retail', k: 'price_retail' }, { t: 'price_bundle', k: 'price_bundle' }, { t: 'bundle_qty', k: 'bundle_qty' },
+      { t: 'price_wholesale', k: 'price_wholesale' }, { t: 'wholesale_qty', k: 'wholesale_qty' }, { t: 'cost_price', k: 'cost_price' },
+      { t: 'stock', k: 'stock' }, { t: 'min_stock', k: 'min_stock' }, { t: 'expiry_date', k: 'expiry_date', f: (v) => fmtDate(v) }, { t: 'active', k: 'active', f: (v) => v ? 'TRUE' : 'FALSE' }
+    ];
+    offerFile('Produk_' + todayStr().replace(/-/g, '') + '.csv', toCsv(this.list, cols), 'text/csv');
+  }
+};
+</script>

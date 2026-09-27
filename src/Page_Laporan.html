@@ -1,0 +1,181 @@
+<section class="page" id="page-laporan" hidden>
+  <div class="page-head">
+    <div>
+      <h1>Laporan</h1>
+      <p class="sub" id="rpSub">Omzet, laba kotor, kasbon dan barang terlaris.</p>
+    </div>
+    <div class="actions">
+      <button class="btn btn-yellow" id="rpClosing"><i data-icon="cash"></i>Tutup Kasir</button>
+      <button class="btn" id="rpPdf"><i data-icon="file"></i>PDF</button>
+      <button class="btn" id="rpRaw"><i data-icon="download"></i>Ekspor data</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="chips" id="rpQuick"></div>
+    <div class="row">
+      <label class="field"><span>Dari</span><input type="date" id="rpFrom"></label>
+      <label class="field"><span>Sampai</span><input type="date" id="rpTo"></label>
+      <div class="field" style="display:flex;align-items:flex-end;flex:0 0 auto"><button class="btn btn-primary" id="rpGo"><i data-icon="bars"></i>Tampilkan</button></div>
+    </div>
+  </div>
+
+  <div id="rpOut" class="mt2"></div>
+</section>
+<script>
+Pages.laporan = {
+  data: null, preset: 'today',
+  presets() {
+    const t = new Date();
+    const ymd = (d) => d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+    const first = new Date(t.getFullYear(), t.getMonth(), 1);
+    const prevFirst = new Date(t.getFullYear(), t.getMonth() - 1, 1);
+    const prevLast = new Date(t.getFullYear(), t.getMonth(), 0);
+    return {
+      today: ['Hari ini', todayStr(), todayStr()],
+      yesterday: ['Kemarin', todayStr(-1), todayStr(-1)],
+      d7: ['7 hari', todayStr(-6), todayStr()],
+      month: ['Bulan ini', ymd(first), todayStr()],
+      prev: ['Bulan lalu', ymd(prevFirst), ymd(prevLast)],
+      d30: ['30 hari', todayStr(-29), todayStr()]
+    };
+  },
+  init() {
+    $('#rpQuick').addEventListener('click', (e) => {
+      const c = e.target.closest('[data-p]');
+      if (!c) return;
+      this.preset = c.getAttribute('data-p');
+      const p = this.presets()[this.preset];
+      $('#rpFrom').value = p[1]; $('#rpTo').value = p[2];
+      this.renderQuick();
+      this.load();
+    });
+    $('#rpGo').addEventListener('click', () => { this.preset = ''; this.renderQuick(); this.load(); });
+    $('#rpPdf').addEventListener('click', () => this.pdf());
+    $('#rpRaw').addEventListener('click', () => this.rawExport());
+    $('#rpClosing').addEventListener('click', () => Pages.kasir.closing());
+    $('#rpOut').addEventListener('click', (e) => {
+      const ex = e.target.closest('[data-csv]');
+      if (ex) { this.csv(ex.getAttribute('data-csv')); return; }
+      const v = e.target.closest('[data-void]');
+      if (v) { this.voidSale(v.getAttribute('data-void')); return; }
+      const r = e.target.closest('[data-receipt]');
+      if (r) this.receipt(r.getAttribute('data-receipt'));
+    });
+  },
+  enter() {
+    if (!$('#rpFrom').value) { const p = this.presets().today; $('#rpFrom').value = p[1]; $('#rpTo').value = p[2]; }
+    this.renderQuick();
+    this.load();
+  },
+  renderQuick() {
+    const ps = this.presets();
+    $('#rpQuick').innerHTML = Object.keys(ps).map((k) => '<button class="chip ' + (k === this.preset ? 'active' : '') + '" data-p="' + k + '">' + esc(ps[k][0]) + '</button>').join('');
+  },
+  async load() {
+    $('#rpOut').innerHTML = '<div class="card">' + skeleton(6) + '</div>';
+    try {
+      const d = await api('apiReport', $('#rpFrom').value, $('#rpTo').value);
+      this.data = d;
+      this.render(d);
+    } catch (e) { $('#rpOut').innerHTML = '<div class="notice n-err">' + esc(e.message) + '</div>'; }
+  },
+  render(d) {
+    const s = d.summary;
+    $('#rpSub').textContent = 'Periode ' + fmtDate(d.from) + ' – ' + fmtDate(d.to);
+    const kpi = (l, v, sub, ic, cls) => '<div class="card kpi"><div class="k-icon ' + cls + '">' + icon(ic) + '</div><div class="k-label">' + esc(l) + '</div><div class="k-value num">' + esc(v) + '</div><div class="k-sub">' + esc(sub || '') + '</div></div>';
+    const csvBtn = (k) => '<button class="btn btn-sm" data-csv="' + k + '">' + icon('download') + 'CSV</button>';
+    const table = (head, rows) => '<div class="table-wrap"><table class="rtable"><thead><tr>' + head.map((h) => '<th class="' + (h[1] ? 'n' : '') + '">' + esc(h[0]) + '</th>').join('') + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+
+    let h = '<div class="grid g4">' +
+      kpi('Omzet', rp(s.omzet), s.trx + ' transaksi', 'wallet', 'ic-orange') +
+      kpi('Laba kotor', rp(s.profit), 'Margin ' + String(s.margin).replace('.', ',') + '%', 'trend', 'ic-green') +
+      kpi('Rata-rata / transaksi', rp(s.avg), 'Diskon ' + rp(s.discount), 'receipt', 'ic-yellow') +
+      kpi('Kasbon', rp(d.kasbon.issued), 'Dibayar ' + rp(d.kasbon.paid) + ' · sisa ' + rp(d.kasbon.outstanding), 'book', 'ic-red') + '</div>' +
+      '<p class="small muted mt1">Modal barang terjual ' + esc(rp(s.cogs)) + (s.tax ? ' · pajak ' + esc(rp(s.tax)) : '') + ' · nilai stok sekarang ' + esc(rp(d.stockValue)) +
+      (s.voidCount ? ' · ' + s.voidCount + ' transaksi dibatalkan (' + esc(rp(s.voidTotal)) + ')' : '') + '</p>';
+
+    if (!s.trx && !s.voidCount) {
+      $('#rpOut').innerHTML = h + '<div class="card mt2">' + emptyState('chart', 'Belum ada penjualan di periode ini', 'Pilih rentang tanggal lain.') + '</div>';
+      return;
+    }
+    h += '<div class="grid g2 mt2"><div class="card"><div class="card-head"><h2>Per hari</h2>' + csvBtn('day') + '</div>' +
+      table([['Tanggal'], ['Transaksi', 1], ['Omzet', 1], ['Laba', 1]], d.byDay.map((x) => '<tr><td class="td-title">' + esc(fmtDate(x.day)) + '</td><td class="n" data-label="Transaksi">' + x.trx + '</td><td class="n" data-label="Omzet">' + esc(rp(x.omzet)) + '</td><td class="n" data-label="Laba">' + esc(rp(x.profit)) + '</td></tr>').join('')) + '</div>' +
+      '<div class="stack"><div class="card"><div class="card-head"><h2>Metode bayar</h2>' + csvBtn('method') + '</div>' +
+      table([['Metode'], ['Transaksi', 1], ['Total', 1]], d.byMethod.map((x) => '<tr><td class="td-title">' + esc(x.method) + '</td><td class="n" data-label="Transaksi">' + x.trx + '</td><td class="n" data-label="Total">' + esc(rp(x.total)) + '</td></tr>').join('')) + '</div>' +
+      '<div class="card"><div class="card-head"><h2>Per kasir</h2></div>' +
+      table([['Kasir'], ['Transaksi', 1], ['Total', 1]], d.byCashier.map((x) => '<tr><td class="td-title">' + esc(x.cashier) + '</td><td class="n" data-label="Transaksi">' + x.trx + '</td><td class="n" data-label="Total">' + esc(rp(x.total)) + '</td></tr>').join('')) + '</div>' +
+      '<div class="card"><div class="card-head"><h2>Per kategori</h2></div>' +
+      table([['Kategori'], ['Omzet', 1]], d.byCategory.map((x) => '<tr><td class="td-title">' + esc(x.category) + '</td><td class="n" data-label="Omzet">' + esc(rp(x.omzet)) + '</td></tr>').join('')) + '</div></div></div>';
+
+    h += '<div class="card mt2"><div class="card-head"><h2>Penjualan per produk</h2>' + csvBtn('product') + '</div>' +
+      table([['Produk'], ['Terjual', 1], ['Omzet', 1], ['Modal', 1], ['Laba', 1]], d.byProduct.slice(0, 100).map((x) => '<tr><td class="td-title">' + esc(x.name) + '</td><td class="n" data-label="Terjual">' + esc(fmtNum(x.qty)) + ' ' + esc(x.unit) + '</td>' +
+        '<td class="n" data-label="Omzet">' + esc(rp(x.omzet)) + '</td><td class="n" data-label="Modal">' + esc(rp(x.cogs)) + '</td><td class="n" data-label="Laba"><b>' + esc(rp(x.profit)) + '</b></td></tr>').join('')) +
+      (d.byProduct.length > 100 ? '<p class="small muted">Menampilkan 100 dari ' + d.byProduct.length + ' produk. Unduh CSV untuk semua.</p>' : '') + '</div>';
+
+    h += '<div class="card mt2"><div class="card-head"><h2>Daftar transaksi</h2>' + csvBtn('trx') + '</div>' +
+      table([['Transaksi'], ['Kasir'], ['Pelanggan'], ['Metode'], ['Total', 1], ['Laba', 1], ['']], d.transactions.slice(0, 300).map((x) => '<tr' + (x.status === 'Batal' ? ' style="opacity:.55"' : '') + '><td class="td-title">' + esc(fmtDateTime(x.datetime)) + ' · ' + esc(x.trx_id) + '</td>' +
+        '<td data-label="Kasir">' + esc(x.cashier) + '</td><td data-label="Pelanggan">' + esc(x.customer_name || '-') + '</td><td data-label="Metode"><span class="badge ' + (x.status === 'Batal' ? 'b-red' : 'b-gray') + '">' + esc(x.status === 'Batal' ? 'Batal' : x.method) + '</span></td>' +
+        '<td class="n" data-label="Total">' + esc(rp(x.total)) + '</td><td class="n" data-label="Laba">' + esc(rp(x.profit)) + '</td>' +
+        '<td class="td-actions"><button class="btn btn-sm" data-receipt="' + esc(x.trx_id) + '">' + icon('printer') + '</button>' + (x.status !== 'Batal' && App.can('sale.void') ? '<button class="btn btn-sm btn-danger" data-void="' + esc(x.trx_id) + '">Batalkan</button>' : '') + '</td></tr>').join('')) +
+      (d.transactions.length > 300 ? '<p class="small muted">Menampilkan 300 transaksi terbaru. Unduh CSV untuk semua' + (d.truncated ? ' (maks 1.000)' : '') + '.</p>' : '') + '</div>';
+    $('#rpOut').innerHTML = h;
+  },
+  csv(kind) {
+    const d = this.data;
+    if (!d) return;
+    const R = (v) => Math.round(v);
+    const map = {
+      day: [d.byDay, [{ t: 'Tanggal', k: 'day', f: fmtDate }, { t: 'Transaksi', k: 'trx' }, { t: 'Omzet', k: 'omzet', f: R }, { t: 'Laba kotor', k: 'profit', f: R }]],
+      method: [d.byMethod, [{ t: 'Metode', k: 'method' }, { t: 'Transaksi', k: 'trx' }, { t: 'Total', k: 'total', f: R }]],
+      product: [d.byProduct, [{ t: 'ID Produk', k: 'product_id' }, { t: 'Produk', k: 'name' }, { t: 'Satuan', k: 'unit' }, { t: 'Terjual', k: 'qty' }, { t: 'Omzet', k: 'omzet', f: R }, { t: 'Modal', k: 'cogs', f: R }, { t: 'Laba kotor', k: 'profit', f: R }]],
+      trx: [d.transactions, [{ t: 'No. Transaksi', k: 'trx_id' }, { t: 'Waktu', k: 'datetime', f: fmtDateTime }, { t: 'Kasir', k: 'cashier' }, { t: 'Pelanggan', k: 'customer_name' }, { t: 'Jumlah barang', k: 'items' }, { t: 'Total', k: 'total', f: R }, { t: 'Laba kotor', k: 'profit', f: R }, { t: 'Metode', k: 'method' }, { t: 'Status', k: 'status' }]]
+    };
+    const m = map[kind];
+    offerFile('Laporan_' + kind + '_' + d.from.replace(/-/g, '') + '_' + d.to.replace(/-/g, '') + '.csv', toCsv(m[0], m[1]), 'text/csv');
+  },
+  async pdf() {
+    try {
+      const r = await withBusy('Membuat PDF…', () => api('apiReportPdf', $('#rpFrom').value, $('#rpTo').value));
+      offerFile(r.filename, r.base64, 'application/pdf', true);
+    } catch (e) { /* toast */ }
+  },
+  rawExport() {
+    const sheets = [['Products', 'Produk'], ['Customers', 'Pelanggan'], ['Sales', 'Penjualan'], ['Credits', 'Kasbon'], ['StockMoves', 'Pergerakan stok'], ['Log_Activity', 'Log aktivitas'], ['Log_AI', 'Log AI']];
+    const m = openModal({
+      title: 'Ekspor data mentah (CSV)',
+      body: '<p class="muted small">Salinan lengkap sheet database untuk akuntan atau arsip.</p><div class="grid g2">' + sheets.map((s) => '<button class="btn" data-sheet="' + s[0] + '">' + icon('download') + esc(s[1]) + '</button>').join('') + '</div>',
+      noFocus: true
+    });
+    m.el.addEventListener('click', async (e) => {
+      const b = e.target.closest('[data-sheet]');
+      if (!b) return;
+      try {
+        const r = await withBusy('Menyiapkan CSV…', () => api('apiExportSheet', b.getAttribute('data-sheet')));
+        offerFile(r.filename, r.csv, 'text/csv');
+      } catch (err) { /* toast */ }
+    });
+  },
+  async receipt(id) {
+    try {
+      const sale = await withBusy('Memuat struk…', () => api('apiGetSale', id));
+      const m = openModal({ title: 'Struk ' + id, body: '<div class="receipt-preview">' + receiptHtml(sale) + '</div>', foot: '<button class="btn" data-close>Tutup</button><button class="btn btn-primary" id="rcPrint">' + icon('printer') + 'Cetak</button>', noFocus: true });
+      $('#rcPrint', m.el).addEventListener('click', () => printHtml(receiptHtml(sale)));
+    } catch (e) { /* toast */ }
+  },
+  async voidSale(id) {
+    const reason = await confirmBox({
+      title: 'Batalkan transaksi ' + id + '?', danger: true, okText: 'Batalkan transaksi',
+      message: 'Stok barang akan dikembalikan dan kasbon (bila ada & belum dicicil) dibatalkan. Tindakan ini tercatat di log.',
+      input: { label: 'Alasan pembatalan', placeholder: 'Mis. salah input jumlah' }
+    });
+    if (!reason || reason === true) { if (reason === true) toast('Isi alasan pembatalan', 'err'); return; }
+    try {
+      await withBusy('Membatalkan…', () => api('apiVoidSale', id, reason));
+      App.products = null; App.customers = null;
+      toast('Transaksi ' + id + ' dibatalkan', 'ok');
+      this.load();
+    } catch (e) { /* toast */ }
+  }
+};
+</script>

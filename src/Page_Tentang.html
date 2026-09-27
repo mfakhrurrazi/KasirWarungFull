@@ -1,0 +1,42 @@
+<section class="page" id="page-tentang" hidden>
+  <div class="hero">
+    <span class="badge-maker">Made by Piyu</span>
+    <h1 class="mt1">KasirWarung AI</h1>
+    <p style="font-size:1.05rem;max-width:560px">Kasir cepat, stok rapi dan buku kasbon yang sopan menagih — dibuat khusus untuk warung sembako &amp; toko kelontong Indonesia. Cukup HP Android dan akun Google.</p>
+    <div class="actions">
+      <button class="btn btn-yellow" data-go="kasir"><i data-icon="cart"></i>Coba kasir</button>
+      <button class="btn" data-go="panduan"><i data-icon="help"></i>Lihat panduan</button>
+    </div>
+  </div>
+
+  <h2 class="mt2">Kenapa warung suka?</h2>
+  <div class="grid g3">
+    <div class="card feature"><div class="f-ic ic-orange"><i data-icon="scan"></i></div><div><h3>Kasir secepat kilat</h3><p class="small mb0">Cari instan atau scan barcode, 20 barang selesai kurang dari 30 detik. Harga paket &amp; grosir otomatis.</p></div></div>
+    <div class="card feature"><div class="f-ic ic-green"><i data-icon="book"></i></div><div><h3>Buku kasbon digital</h3><p class="small mb0">Limit per pelanggan, cicilan, tag jatuh tempo berwarna, dan pengingat WhatsApp sekali ketuk.</p></div></div>
+    <div class="card feature"><div class="f-ic ic-yellow"><i data-icon="box"></i></div><div><h3>Stok tidak kecolongan</h3><p class="small mb0">Stok berkurang otomatis, harga modal rata-rata, peringatan stok menipis &amp; hampir kedaluwarsa.</p></div></div>
+    <div class="card feature"><div class="f-ic ic-orange"><i data-icon="chart"></i></div><div><h3>Laporan jelas</h3><p class="small mb0">Omzet, laba kotor, produk terlaris, tutup kasir harian, ekspor CSV &amp; PDF.</p></div></div>
+    <div class="card feature"><div class="f-ic ic-green"><i data-icon="sparkle"></i></div><div><h3>AI yang membantu</h3><p class="small mb0">Saran kulakan, pesan tagih halus dan cerita omzet harian. Bisa dimatikan — aplikasi tetap jalan penuh.</p></div></div>
+    <div class="card feature"><div class="f-ic ic-yellow"><i data-icon="shield"></i></div><div><h3>Data milik Anda</h3><p class="small mb0">Tersimpan di Google Sheets Anda sendiri, backup otomatis ke Google Drive, login per kasir.</p></div></div>
+  </div>
+
+  <div class="card mt2 tint-yellow">
+    <h2>Cocok untuk</h2>
+    <p class="mb0">Warung sembako · toko kelontong · warung madura · kios rokok &amp; minuman · agen gas &amp; air galon · koperasi kecil.</p>
+  </div>
+
+  <div class="card mt2">
+    <h2>Yang Anda dapatkan</h2>
+    <ul>
+      <li>Aplikasi web siap pakai di HP Android 5 inci, tablet dan laptop.</li>
+      <li>Template 300 barang warung + impor CSV.</li>
+      <li>Struk thermal 58 mm &amp; struk WhatsApp.</li>
+      <li>Setup Wizard, panduan lengkap, dukungan WhatsApp.</li>
+    </ul>
+    <p class="small muted mb0">Versi <span id="abVersion"></span> · © 2026 KasirWarung AI · Made by Piyu</p>
+  </div>
+</section>
+<script>
+Pages.tentang = {
+  enter() { $('#abVersion').textContent = (App.boot.app && App.boot.app.version) || '1.0.0'; }
+};
+</script>

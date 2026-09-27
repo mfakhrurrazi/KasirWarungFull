@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#F97316">
+  <meta name="description" content="KasirWarung AI — kasir, stok dan buku kasbon untuk warung sembako & toko kelontong. Made by Piyu.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+  <?!= include('Styles'); ?>
+</head>
+<body class="auth">
+  <div id="bootSplash" role="status" aria-live="polite">
+    <div>
+      <svg class="bs-logo" viewBox="0 0 96 96" aria-hidden="true">
+        <rect x="14" y="40" width="68" height="44" rx="6" fill="#FFF7ED" stroke="#EA580C" stroke-width="4"/>
+        <path d="M8 40h80l-8-22H16z" fill="#F97316"/>
+        <path d="M24 18l-4 22M40 18l-2 22M56 18l2 22M72 18l4 22" stroke="#fff" stroke-width="5"/>
+        <rect x="38" y="58" width="20" height="26" rx="3" fill="#FACC15"/>
+        <circle cx="26" cy="58" r="5" fill="#16A34A"/><circle cx="70" cy="58" r="5" fill="#16A34A"/>
+      </svg>
+      <div class="bs-name">KasirWarung AI</div>
+      <div class="muted small">Menyiapkan warung…</div>
+    </div>
+  </div>
+
+  <script>window.Pages = {};</script>
+  <div id="app">
+    <div id="licenseBanner" class="license-banner" hidden></div>
+    <header class="topbar" id="topbar">
+      <div class="awning-stripes" aria-hidden="true"></div>
+      <a class="brand" href="#" id="brandLink" aria-label="Beranda">
+        <span class="brand-logo" id="brandLogo"></span>
+        <span class="brand-text">
+          <span class="brand-name" id="brandName">KasirWarung AI</span>
+          <span class="brand-app">KasirWarung AI <span class="badge-maker">Made by Piyu</span></span>
+        </span>
+      </a>
+      <button class="user-btn" id="userBtn" type="button" aria-haspopup="true" aria-expanded="false" hidden>
+        <span class="user-avatar" id="userAvatar">?</span>
+        <span class="user-name" id="userName"></span>
+      </button>
+      <div class="user-menu" id="userMenu" role="menu" hidden></div>
+    </header>
+
+    <nav class="sidebar" id="sidebar" aria-label="Menu utama"></nav>
+
+    <main id="main">
+      <?!= include('Page_Login'); ?>
+      <?!= include('Page_Setup'); ?>
+      <?!= include('Page_Dashboard'); ?>
+      <?!= include('Page_Kasir'); ?>
+      <?!= include('Page_Produk'); ?>
+      <?!= include('Page_StokMasuk'); ?>
+      <?!= include('Page_Pelanggan'); ?>
+      <?!= include('Page_Laporan'); ?>
+      <?!= include('Page_Pengaturan'); ?>
+      <?!= include('Page_Panduan'); ?>
+      <?!= include('Page_Lisensi'); ?>
+      <?!= include('Page_Tentang'); ?>
+      <?!= include('Page_Syarat'); ?>
+      <?!= include('Page_Privasi'); ?>
+    </main>
+
+    <footer class="footer" id="footer"></footer>
+    <nav class="bottomnav" id="bottomnav" aria-label="Menu bawah" hidden></nav>
+  </div>
+
+  <div id="toast" aria-live="polite"></div>
+  <div id="modalRoot"></div>
+  <div id="busy" hidden><div class="busy-box"><span class="spinner"></span><span id="busyText">Memproses…</span></div></div>
+  <div id="printArea" aria-hidden="true"></div>
+
+  <script>window.BOOT = <?!= bootJson ?>;</script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js" defer></script>
+  <?!= include('Scripts'); ?>
+</body>
+</html>

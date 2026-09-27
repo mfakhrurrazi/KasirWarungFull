@@ -1,0 +1,782 @@
+<script>
+/* ==========================================================================
+   KasirWarung AI — Scripts (core: api, router, chrome, helpers)
+   Page logic lives in each Page_*.html partial (Pages.<name> = {...}).
+   © 2026 KasirWarung AI · Made by Piyu
+   ========================================================================== */
+'use strict';
+
+/* ---------------- DOM & text helpers ---------------- */
+const $ = (sel, root) => (root || document).querySelector(sel);
+const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
+
+/** Escape every dynamic value before it goes into innerHTML (XSS guard). */
+function esc(v) {
+  return String(v === null || v === undefined ? '' : v)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function rp(n) {
+  const x = Math.round(Number(n) || 0);
+  const s = Math.abs(x).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return (x < 0 ? '-Rp ' : 'Rp ') + s;
+}
+
+function fmtNum(n) {
+  const x = Math.round((Number(n) || 0) * 100) / 100;
+  const parts = Math.abs(x).toString().split('.');
+  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return (x < 0 ? '-' : '') + parts.join(',');
+}
+
+/** Accepts "13.500", "13500", "2,5", "Rp 1.250.000". */
+function parseNum(v) {
+  if (typeof v === 'number') return v;
+  let s = String(v || '').replace(/rp/gi, '').replace(/\s/g, '');
+  if (!s) return 0;
+  if (/^-?\d{1,3}(\.\d{3})+(,\d+)?$/.test(s)) s = s.replace(/\./g, '').replace(',', '.');
+  else if (s.indexOf(',') >= 0 && s.indexOf('.') < 0) s = s.replace(',', '.');
+  const n = Number(s);
+  return isFinite(n) ? n : 0;
+}
+
+function pad2(n) { return ('0' + n).slice(-2); }
+
+/** Server sends local Jakarta time as "yyyy-MM-ddTHH:mm:ss" (or "yyyy-MM-dd"). */
+function fmtDate(s) {
+  if (!s) return '';
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(s));
+  return m ? m[3] + '/' + m[2] + '/' + m[1] : String(s);
+}
+function fmtDateTime(s) {
+  if (!s) return '';
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(String(s));
+  return m ? m[3] + '/' + m[2] + '/' + m[1] + ' ' + m[4] + ':' + m[5] : fmtDate(s);
+}
+function fmtTime(s) {
+  const m = /T(\d{2}):(\d{2})/.exec(String(s || ''));
+  return m ? m[1] + ':' + m[2] : '';
+}
+function todayStr(offsetDays) {
+  const d = new Date();
+  if (offsetDays) d.setDate(d.getDate() + offsetDays);
+  return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+}
+function daysLabel(days) {
+  if (days === null || days === undefined) return '';
+  if (days > 0) return 'Lewat ' + days + ' hari';
+  if (days === 0) return 'Jatuh tempo hari ini';
+  return (-days) + ' hari lagi';
+}
+
+function debounce(fn, ms) {
+  let t;
+  return function () { const a = arguments, c = this; clearTimeout(t); t = setTimeout(() => fn.apply(c, a), ms); };
+}
+
+const Store = {
+  get(k, def) { try { const v = localStorage.getItem('kw_' + k); return v === null ? def : JSON.parse(v); } catch (e) { return def; } },
+  set(k, v) { try { localStorage.setItem('kw_' + k, JSON.stringify(v)); } catch (e) { /* private mode */ } },
+  del(k) { try { localStorage.removeItem('kw_' + k); } catch (e) { /* ignore */ } }
+};
+
+function initials(name) {
+  const parts = String(name || '?').replace(/^(bu|pak|mbak|mas|bapak|ibu)\s+/i, '').trim().split(/\s+/);
+  return ((parts[0] || '?').charAt(0) + (parts[1] ? parts[1].charAt(0) : '')).toUpperCase();
+}
+function avatarColor(name) {
+  const colors = ['#F97316', '#16A34A', '#2563EB', '#DB2777', '#7C3AED', '#0D9488', '#CA8A04', '#DC2626'];
+  let h = 0;
+  for (const ch of String(name || '')) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return colors[h % colors.length];
+}
+const CAT_COLORS = { 'Sembako': '#F97316', 'Minuman': '#2563EB', 'Rokok': '#6B7280', 'Snack': '#DB2777', 'Toiletries': '#0D9488', 'Gas & Air': '#16A34A', 'Lainnya': '#CA8A04' };
+
+/* ---------------- Icons (inline SVG, stroke-based) ---------------- */
+const ICONS = {
+  home: '<path d="M3 10l9-7 9 7v10a2 2 0 0 1-2 2h-4v-7H9v7H5a2 2 0 0 1-2-2z"/>',
+  cart: '<circle cx="9" cy="21" r="1.5"/><circle cx="19" cy="21" r="1.5"/><path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6"/>',
+  box: '<path d="M21 16V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4a2 2 0 0 0 1-1.7z"/><path d="M3.3 7L12 12l8.7-5M12 22V12"/>',
+  truck: '<rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 3v5h-7z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/>',
+  book: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M9 7h7M9 11h5"/>',
+  chart: '<path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/>',
+  bars: '<path d="M12 20V10M18 20V4M6 20v-4"/>',
+  sliders: '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>',
+  help: '<circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01"/>',
+  key: '<circle cx="7.5" cy="15.5" r="5.5"/><path d="M11.5 11.5L21 2M16 7l3 3M18.5 4.5l2 2"/>',
+  star: '<path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/>',
+  menu: '<path d="M3 12h18M3 6h18M3 18h18"/>',
+  user: '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  users: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  minus: '<path d="M5 12h14"/>',
+  x: '<path d="M18 6L6 18M6 6l12 12"/>',
+  check: '<path d="M20 6L9 17l-5-5"/>',
+  trash: '<path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>',
+  edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
+  printer: '<path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>',
+  wa: '<path d="M21 11.5a8.4 8.4 0 0 1-12.4 7.4L3 21l2.1-5.5A8.5 8.5 0 1 1 21 11.5z"/><path d="M9 9.5c.5 2 2.5 4 4.5 4.5l1.2-1.2 2 1-.5 1.7c-3.5.3-7.8-4-7.5-7.5l1.7-.5 1 2z"/>',
+  sparkle: '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 3v4M17 5h4M5 17v4M3 19h4"/>',
+  download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/>',
+  upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5M12 3v12"/>',
+  logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/>',
+  lock: '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+  alert: '<path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>',
+  clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+  cash: '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M6 12h.01M18 12h.01"/>',
+  qr: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3M21 14v7h-7M17 21v-4"/>',
+  bank: '<path d="M3 10l9-6 9 6M5 10v8M9 10v8M15 10v8M19 10v8M3 21h18"/>',
+  tag: '<path d="M20.6 13.4L13.4 20.6a2 2 0 0 1-2.8 0L2 12V2h10l8.6 8.6a2 2 0 0 1 0 2.8z"/><circle cx="7" cy="7" r="1.5"/>',
+  refresh: '<path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.5 9a9 9 0 0 1 14.9-3.4L23 10M1 14l4.6 4.4A9 9 0 0 0 20.5 15"/>',
+  cloud: '<path d="M18 10h-1.3A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>',
+  shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
+  file: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h6"/>',
+  store: '<path d="M3 9l1.5-5h15L21 9"/><path d="M3 9h18v2a3 3 0 0 1-6 0 3 3 0 0 1-6 0 3 3 0 0 1-6 0z"/><path d="M5 13v8h14v-8M10 21v-5h4v5"/>',
+  wallet: '<path d="M20 12V8H6a2 2 0 0 1 0-4h12v4"/><path d="M4 6v12a2 2 0 0 0 2 2h14v-4"/><path d="M18 12a2 2 0 0 0 0 4h4v-4z"/>',
+  trend: '<path d="M23 6l-9.5 9.5-5-5L1 18"/><path d="M17 6h6v6"/>',
+  receipt: '<path d="M4 2v20l3-2 3 2 3-2 3 2 3-2 1 .7V2l-1 .7-3-2-3 2-3-2-3 2-3-2z"/><path d="M8 7h8M8 11h8M8 15h5"/>',
+  eye: '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/>',
+  phone: '<rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/>',
+  scan: '<path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 8v8M11 8v8M15 8v8M18 8v8"/>',
+  calendar: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+  gift: '<path d="M20 12v10H4V12M2 7h20v5H2zM12 22V7M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7zM12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/>'
+};
+
+/** Replaces <i data-icon="name"></i> placeholders in static markup with SVG icons. */
+function hydrateIcons(root) {
+  $$('i[data-icon]', root).forEach((el) => { el.outerHTML = icon(el.getAttribute('data-icon')); });
+}
+
+function icon(name, cls) {
+  return '<svg class="' + (cls || '') + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (ICONS[name] || '') + '</svg>';
+}
+
+/* ---------------- Empty-state illustrations ---------------- */
+const ILLUS = {
+  stall: '<svg viewBox="0 0 200 130" aria-hidden="true"><ellipse cx="100" cy="122" rx="80" ry="6" fill="#F5E6D6"/><rect x="36" y="52" width="128" height="66" rx="8" fill="#FFF7ED" stroke="#FED7AA" stroke-width="3"/><path d="M26 52h148l-14-32H40z" fill="#F97316"/><path d="M52 20l-8 32M76 20l-4 32M100 20v32M124 20l4 32M148 20l8 32" stroke="#fff" stroke-width="7" opacity=".9"/><path d="M26 52c9 10 21 10 30 0 9 10 21 10 30 0 9 10 21 10 30 0 9 10 21 10 30 0 9 10 21 10 28 0" fill="none" stroke="#EA580C" stroke-width="4"/><rect x="84" y="78" width="32" height="40" rx="4" fill="#FACC15"/><circle cx="58" cy="84" r="9" fill="#16A34A"/><circle cx="142" cy="84" r="9" fill="#F97316"/></svg>',
+  box: '<svg viewBox="0 0 200 130" aria-hidden="true"><ellipse cx="100" cy="122" rx="70" ry="6" fill="#F5E6D6"/><path d="M50 50l50-22 50 22v52l-50 20-50-20z" fill="#FED7AA"/><path d="M50 50l50 20 50-20M100 70v52" stroke="#EA580C" stroke-width="4" fill="none"/><path d="M50 50l-14 18 50 20 14-18z" fill="#FDBA74"/><path d="M150 50l14 18-50 20-14-18z" fill="#FDBA74"/><circle cx="160" cy="30" r="6" fill="#FACC15"/><circle cx="40" cy="28" r="4" fill="#16A34A"/></svg>',
+  cart: '<svg viewBox="0 0 200 130" aria-hidden="true"><ellipse cx="100" cy="122" rx="70" ry="6" fill="#F5E6D6"/><path d="M30 30h20l16 60h78l14-44H58" fill="none" stroke="#F97316" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/><circle cx="76" cy="108" r="9" fill="#EA580C"/><circle cx="136" cy="108" r="9" fill="#EA580C"/><path d="M92 58h40" stroke="#FACC15" stroke-width="7" stroke-linecap="round"/></svg>',
+  book: '<svg viewBox="0 0 200 130" aria-hidden="true"><ellipse cx="100" cy="122" rx="70" ry="6" fill="#F5E6D6"/><rect x="52" y="18" width="96" height="98" rx="8" fill="#FFF7ED" stroke="#FDBA74" stroke-width="3"/><rect x="52" y="18" width="18" height="98" rx="6" fill="#F97316"/><path d="M84 44h48M84 62h40M84 80h44" stroke="#FED7AA" stroke-width="6" stroke-linecap="round"/><circle cx="142" cy="96" r="20" fill="#16A34A"/><path d="M133 96l6 6 12-12" stroke="#fff" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  chart: '<svg viewBox="0 0 200 130" aria-hidden="true"><ellipse cx="100" cy="122" rx="70" ry="6" fill="#F5E6D6"/><rect x="40" y="70" width="22" height="42" rx="5" fill="#FED7AA"/><rect x="72" y="50" width="22" height="62" rx="5" fill="#FDBA74"/><rect x="104" y="34" width="22" height="78" rx="5" fill="#F97316"/><rect x="136" y="58" width="22" height="54" rx="5" fill="#FACC15"/><path d="M40 40l40-14 30 10 44-22" stroke="#16A34A" stroke-width="5" fill="none" stroke-linecap="round"/></svg>',
+  ok: '<svg viewBox="0 0 200 130" aria-hidden="true"><ellipse cx="100" cy="122" rx="60" ry="6" fill="#E3F4E8"/><circle cx="100" cy="62" r="46" fill="#DCFCE7"/><circle cx="100" cy="62" r="32" fill="#16A34A"/><path d="M84 62l11 11 22-22" stroke="#fff" stroke-width="8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+};
+
+function emptyState(kind, title, text, actionHtml) {
+  return '<div class="empty">' + (ILLUS[kind] || ILLUS.stall) + '<h3>' + esc(title) + '</h3>' +
+    (text ? '<p>' + esc(text) + '</p>' : '') + (actionHtml ? '<div class="mt2">' + actionHtml + '</div>' : '') + '</div>';
+}
+
+function skeleton(lines) {
+  let h = '';
+  for (let i = 0; i < (lines || 3); i++) h += '<div class="skeleton" style="height:' + (i === 0 ? 26 : 18) + 'px;margin:10px 0;width:' + (90 - i * 12) + '%"></div>';
+  return h;
+}
+
+/* ---------------- Toast, busy, modal, confirm ---------------- */
+function toast(msg, type) {
+  const el = document.createElement('div');
+  el.className = 'toast ' + (type || '');
+  el.innerHTML = icon(type === 'err' ? 'alert' : (type === 'ok' ? 'check' : 'sparkle')) + '<span>' + esc(msg) + '</span>';
+  $('#toast').appendChild(el);
+  setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity .3s'; }, type === 'err' ? 5200 : 3200);
+  setTimeout(() => el.remove(), type === 'err' ? 5600 : 3600);
+}
+
+let busyCount = 0;
+function busy(on, text) {
+  busyCount = Math.max(0, busyCount + (on ? 1 : -1));
+  if (text) $('#busyText').textContent = text;
+  $('#busy').hidden = busyCount === 0;
+}
+
+function openModal(opts) {
+  const wrap = document.createElement('div');
+  wrap.className = 'modal-wrap';
+  wrap.innerHTML = '<div class="modal ' + (opts.wide ? 'wide' : '') + '" role="dialog" aria-modal="true" aria-label="' + esc(opts.title) + '">' +
+    '<div class="modal-grip"></div><div class="modal-head"><h2>' + esc(opts.title) + '</h2>' +
+    '<button class="btn btn-ghost icon-btn" data-close aria-label="Tutup">' + icon('x') + '</button></div>' +
+    '<div class="modal-body">' + (opts.body || '') + '</div>' + (opts.foot ? '<div class="modal-foot">' + opts.foot + '</div>' : '') + '</div>';
+  $('#modalRoot').appendChild(wrap);
+  let closed = false;
+  const close = (val) => {
+    if (closed) return;
+    closed = true;
+    wrap.remove();
+    document.removeEventListener('keydown', onKey);
+    if (opts.onClose) opts.onClose(val);
+  };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  wrap.addEventListener('click', (e) => {
+    if (e.target === wrap && !opts.sticky) close();
+    if (e.target.closest('[data-close]')) close();
+  });
+  const first = $('input,select,textarea', wrap);
+  if (first && !opts.noFocus) setTimeout(() => first.focus(), 60);
+  return { el: wrap, close: close };
+}
+
+function confirmBox(o) {
+  return new Promise((resolve) => {
+    let value = false;
+    const input = o.input ? '<label class="field mt1"><span>' + esc(o.input.label) + '</span><input id="cfInput" autocomplete="off" placeholder="' + esc(o.input.placeholder || '') + '"></label>' : '';
+    const m = openModal({
+      title: o.title || 'Konfirmasi',
+      body: '<p>' + esc(o.message || '') + '</p>' + (o.html || '') + input,
+      foot: '<button class="btn" data-close>Batal</button><button class="btn ' + (o.danger ? 'btn-danger' : 'btn-primary') + '" id="cfOk">' + esc(o.okText || 'Ya, lanjutkan') + '</button>',
+      noFocus: !o.input,
+      onClose: () => resolve(value)
+    });
+    $('#cfOk', m.el).addEventListener('click', () => {
+      if (o.input) {
+        const v = $('#cfInput', m.el).value.trim();
+        if (o.input.match && v !== o.input.match) { toast('Ketik ' + o.input.match + ' untuk konfirmasi', 'err'); return; }
+        value = v || true;
+      } else value = true;
+      if (o.collect) o.collect(m.el);
+      m.close();
+    });
+  });
+}
+
+function aiBadge(source) {
+  return source === 'ai'
+    ? '<span class="badge b-ai">' + icon('sparkle') + 'Dibantu AI</span>'
+    : '<span class="badge b-noai">AI tidak aktif</span>';
+}
+
+/* ---------------- Server calls ---------------- */
+const PUBLIC_FNS = ['apiBoot', 'apiInitDatabase', 'apiLogin'];
+
+function api(fn) {
+  const args = Array.prototype.slice.call(arguments, 1);
+  return new Promise((resolve, reject) => {
+    if (typeof google === 'undefined' || !google.script || !google.script.run) {
+      reject(new Error('Aplikasi harus dibuka dari link Web App Google Apps Script.'));
+      return;
+    }
+    const argv = PUBLIC_FNS.indexOf(fn) >= 0 ? args : [App.token].concat(args);
+    google.script.run
+      .withSuccessHandler((raw) => {
+        let r;
+        try { r = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch (e) { reject(new Error('Respon server tidak valid.')); return; }
+        if (!r || !r.ok) {
+          const err = new Error((r && r.error) || 'Permintaan gagal.');
+          err.code = r && r.code;
+          if (err.code === 'AUTH' && fn !== 'apiMe') App.sessionExpired(err.message);
+          reject(err);
+          return;
+        }
+        resolve(r.data);
+      })
+      .withFailureHandler((err) => {
+        const msg = err && err.message ? err.message : String(err || '');
+        reject(new Error(/network|NetworkError|failed to fetch|timeout/i.test(msg)
+          ? 'Koneksi internet terputus. Periksa sinyal lalu coba lagi.'
+          : 'Server bermasalah: ' + msg));
+      })[fn].apply(null, argv);
+  });
+}
+
+/** Wraps an async action with the busy overlay and error toast. */
+async function withBusy(text, fn) {
+  busy(true, text);
+  try { return await fn(); }
+  catch (e) { toast(e.message, 'err'); throw e; }
+  finally { busy(false); }
+}
+
+/* ---------------- Files: CSV / PDF / Drive ---------------- */
+function csvEscape(v) {
+  let s = v === null || v === undefined ? '' : String(v);
+  if (/^[=+\-@]/.test(s)) s = "'" + s;
+  return /[",;\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+function toCsv(rows, cols) {
+  const lines = [cols.map((c) => csvEscape(c.t)).join(',')];
+  rows.forEach((r) => lines.push(cols.map((c) => csvEscape(c.f ? c.f(r[c.k], r) : r[c.k])).join(',')));
+  return lines.join('\n');
+}
+
+function parseCsv(text) {
+  text = String(text || '').replace(/^﻿/, '');
+  const firstLine = text.split(/\r?\n/)[0] || '';
+  const delim = (firstLine.split(';').length > firstLine.split(',').length) ? ';' : ',';
+  const rows = [];
+  let row = [], cur = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (q) {
+      if (ch === '"' && text[i + 1] === '"') { cur += '"'; i++; }
+      else if (ch === '"') q = false;
+      else cur += ch;
+    } else if (ch === '"') q = true;
+    else if (ch === delim) { row.push(cur); cur = ''; }
+    else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && text[i + 1] === '\n') i++;
+      row.push(cur); rows.push(row); row = []; cur = '';
+    } else cur += ch;
+  }
+  if (cur !== '' || row.length) { row.push(cur); rows.push(row); }
+  const clean = rows.filter((r) => r.some((c) => String(c).trim() !== ''));
+  if (!clean.length) return [];
+  const head = clean.shift().map((h) => String(h).trim().toLowerCase());
+  return clean.map((r) => { const o = {}; head.forEach((h, i) => { o[h] = r[i] === undefined ? '' : String(r[i]).trim(); }); return o; });
+}
+
+function triggerDownload(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.rel = 'noopener';
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1500);
+}
+
+/** Downloads in the browser and offers "Simpan ke Drive" as a fallback. */
+function offerFile(filename, content, mime, isBase64) {
+  let blob;
+  if (isBase64) {
+    const bin = atob(content);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    blob = new Blob([bytes], { type: mime });
+  } else {
+    blob = new Blob(['﻿' + content], { type: mime + ';charset=utf-8' });
+  }
+  try { triggerDownload(blob, filename); } catch (e) { /* sandbox may block */ }
+  const m = openModal({
+    title: 'File siap',
+    body: '<p><b>' + esc(filename) + '</b> sedang diunduh.</p><p class="muted small">Kalau unduhan tidak muncul di HP, simpan ke Google Drive lalu buka dari sana.</p>',
+    foot: '<button class="btn" data-close>Tutup</button>' + (App.can('report') ? '<button class="btn btn-green" id="toDrive">' + icon('cloud') + 'Simpan ke Drive</button>' : ''),
+    noFocus: true
+  });
+  const btn = $('#toDrive', m.el);
+  if (btn) btn.addEventListener('click', async () => {
+    try {
+      const r = await withBusy('Menyimpan ke Drive…', () => api('apiSaveToDrive', filename, isBase64 ? content : '﻿' + content, mime, !!isBase64));
+      m.close();
+      openModal({ title: 'Tersimpan di Drive', body: '<p>File tersimpan di folder <b>KasirWarung AI - Ekspor</b>.</p><a class="btn btn-primary btn-block" target="_blank" rel="noopener" href="' + esc(r.url) + '">Buka file</a>', noFocus: true });
+    } catch (e) { /* toast shown */ }
+  });
+}
+
+/* ---------------- WhatsApp ---------------- */
+/** 6281234567890 → 081234567890 for display. */
+function phoneLocal(phone) {
+  const s = String(phone || '').replace(/[^\d]/g, '');
+  return s.indexOf('62') === 0 ? '0' + s.slice(2) : s;
+}
+function waNumber(phone) {
+  let s = String(phone || '').replace(/[^\d]/g, '');
+  if (s.indexOf('0') === 0) s = '62' + s.slice(1);
+  return s;
+}
+function waLink(phone, text) {
+  const n = waNumber(phone);
+  return 'https://wa.me/' + n + '?text=' + encodeURIComponent(text || '');
+}
+function openWa(phone, text) {
+  window.open(waLink(phone, text), '_blank', 'noopener');
+}
+
+/* ---------------- Pricing (mirror of server unitPrice_) ---------------- */
+function unitPrice(p, qty) {
+  let price = +p.price_retail || 0, tier = 'Eceran';
+  if (p.bundle_qty > 0 && p.price_bundle > 0 && qty >= p.bundle_qty && p.price_bundle < price) { price = p.price_bundle; tier = 'Paket'; }
+  if (p.wholesale_qty > 0 && p.price_wholesale > 0 && qty >= p.wholesale_qty && p.price_wholesale < price) { price = p.price_wholesale; tier = 'Grosir'; }
+  return { price: price, tier: tier };
+}
+function isWholeUnit(unit) { return unit === 'pcs' || unit === 'renteng' || unit === 'dus'; }
+
+/* ---------------- 58mm receipts ---------------- */
+function receiptHtml(s) {
+  const b = s.business || {};
+  const items = (s.items || []).map((i) =>
+    '<div class="r-item"><div>' + esc(i.name) + '</div><div class="r-row"><span>' + esc(fmtNum(i.qty)) + ' ' + esc(i.unit) + ' x ' + esc(fmtNum(i.price)) +
+    (i.tier && i.tier !== 'Eceran' ? ' (' + esc(i.tier) + ')' : '') + '</span><span>' + esc(fmtNum(i.total)) + '</span></div></div>').join('');
+  const row = (l, v, cls) => '<div class="r-row ' + (cls || '') + '"><span>' + esc(l) + '</span><span>' + esc(v) + '</span></div>';
+  let h = '<div class="receipt">' +
+    '<div class="r-c r-big">' + esc(b.name || 'Warung') + '</div>' +
+    (b.address ? '<div class="r-c r-muted">' + esc(b.address) + '</div>' : '') +
+    (b.whatsapp ? '<div class="r-c r-muted">WA ' + esc(phoneLocal(b.whatsapp)) + '</div>' : '') +
+    '<div class="r-line"></div>' +
+    '<div>No: ' + esc(s.trx_id) + '</div><div>' + esc(fmtDateTime(s.datetime)) + '</div>' +
+    '<div>Kasir: ' + esc(s.cashier || '') + '</div>' +
+    (s.customer ? '<div>Pelanggan: ' + esc(s.customer.name) + '</div>' : (s.customer_name ? '<div>Pelanggan: ' + esc(s.customer_name) + '</div>' : '')) +
+    '<div class="r-line"></div>' + items + '<div class="r-line"></div>' +
+    row('Subtotal', fmtNum(s.subtotal)) +
+    (s.discount ? row('Diskon', '-' + fmtNum(s.discount)) : '') +
+    (s.tax ? row('Pajak' + (s.tax_percent ? ' ' + s.tax_percent + '%' : ''), fmtNum(s.tax)) : '') +
+    row('TOTAL', rp(s.total), 'r-b r-big') +
+    row('Bayar (' + s.method + ')', fmtNum(s.paid));
+  if (s.method === 'Tunai') h += row('Kembali', fmtNum(s.change), 'r-b');
+  if (s.credit) {
+    h += '<div class="r-line"></div>' + row('Kasbon', rp(s.credit.amount), 'r-b') + row('Jatuh tempo', fmtDate(s.credit.due_date)) + row('Total kasbon', rp(s.credit.balance));
+  }
+  if (s.status === 'Batal') h += '<div class="r-c r-big">*** DIBATALKAN ***</div>';
+  h += '<div class="r-line"></div><div class="r-c">' + esc(b.footer || 'Terima kasih') + '</div>' +
+    '<div class="r-c r-muted">KasirWarung AI · Made by Piyu</div></div>';
+  return h;
+}
+
+function receiptText(s) {
+  const b = s.business || {};
+  const lines = ['*' + (b.name || 'Warung') + '*', s.trx_id + ' · ' + fmtDateTime(s.datetime), '--------------------'];
+  (s.items || []).forEach((i) => {
+    lines.push(i.name);
+    lines.push('  ' + fmtNum(i.qty) + ' ' + i.unit + ' x ' + fmtNum(i.price) + ' = ' + fmtNum(i.total));
+  });
+  lines.push('--------------------');
+  if (s.discount) lines.push('Diskon: -' + rp(s.discount));
+  if (s.tax) lines.push('Pajak: ' + rp(s.tax));
+  lines.push('*TOTAL: ' + rp(s.total) + '*');
+  lines.push('Bayar (' + s.method + '): ' + rp(s.paid));
+  if (s.method === 'Tunai') lines.push('Kembali: ' + rp(s.change));
+  if (s.credit) lines.push('Kasbon: ' + rp(s.credit.amount) + ' · jatuh tempo ' + fmtDate(s.credit.due_date));
+  lines.push('', b.footer || 'Terima kasih 🙏');
+  return lines.join('\n');
+}
+
+function paymentReceiptHtml(p) {
+  const b = p.business || {};
+  const row = (l, v, cls) => '<div class="r-row ' + (cls || '') + '"><span>' + esc(l) + '</span><span>' + esc(v) + '</span></div>';
+  return '<div class="receipt"><div class="r-c r-big">' + esc(b.name || 'Warung') + '</div>' +
+    (b.address ? '<div class="r-c r-muted">' + esc(b.address) + '</div>' : '') +
+    '<div class="r-line"></div><div class="r-c r-b">BUKTI BAYAR KASBON</div>' +
+    row('Tanggal', fmtDateTime(p.at)) + '<div>Pelanggan: ' + esc(p.name) + '</div><div>Kasir: ' + esc(p.cashier || '') + '</div>' +
+    '<div class="r-line"></div>' + row('Dibayar (' + p.method + ')', rp(p.paid), 'r-b') + row('Sisa kasbon', rp(p.remaining), 'r-b') +
+    '<div class="r-line"></div><div class="r-c">Terima kasih 🙏</div><div class="r-c r-muted">KasirWarung AI · Made by Piyu</div></div>';
+}
+
+function printHtml(html) {
+  $('#printArea').innerHTML = html;
+  setTimeout(() => window.print(), 50);
+}
+
+/* ---------------- Charts ---------------- */
+const charts = {};
+function whenChartReady(cb, tries) {
+  if (window.Chart) { cb(); return; }
+  if ((tries || 0) > 60) return;
+  setTimeout(() => whenChartReady(cb, (tries || 0) + 1), 100);
+}
+function drawChart(id, config) {
+  whenChartReady(() => {
+    const cv = document.getElementById(id);
+    if (!cv) return;
+    if (charts[id]) charts[id].destroy();
+    Chart.defaults.font.family = 'Nunito, system-ui, sans-serif';
+    Chart.defaults.font.size = 13;
+    Chart.defaults.color = '#4B5563';
+    charts[id] = new Chart(cv.getContext('2d'), config);
+  });
+}
+
+/* ==========================================================================
+   App shell: session, router, header, nav, footer
+   ========================================================================== */
+const PAGE_META = {
+  login: { title: 'Masuk', public: true },
+  setup: { title: 'Setup Wizard', perm: 'settings' },
+  dashboard: { title: 'Beranda', perm: 'dashboard', icon: 'home', nav: 1 },
+  kasir: { title: 'Kasir', perm: 'pos.sell', icon: 'cart', nav: 1 },
+  pelanggan: { title: 'Pelanggan & Kasbon', short: 'Kasbon', perm: 'customer.view', icon: 'book', nav: 1 },
+  produk: { title: 'Produk', perm: 'product.view', icon: 'box', nav: 1 },
+  stok: { title: 'Stok Masuk', perm: 'stock.in', icon: 'truck', nav: 1 },
+  laporan: { title: 'Laporan', perm: 'report', icon: 'chart', nav: 1 },
+  pengaturan: { title: 'Pengaturan', perm: 'settings', icon: 'sliders', nav: 1 },
+  panduan: { title: 'Panduan & FAQ', short: 'Panduan', public: true, icon: 'help', nav: 2 },
+  lisensi: { title: 'Lisensi', public: true, icon: 'key', nav: 2 },
+  tentang: { title: 'Tentang Aplikasi', short: 'Tentang', public: true, icon: 'star', nav: 2 },
+  syarat: { title: 'Syarat Lisensi', public: true },
+  privasi: { title: 'Kebijakan Privasi', public: true }
+};
+
+const App = {
+  boot: window.BOOT || {},
+  token: null, user: null, perms: {}, settings: {}, license: null, ai: {}, setupDone: false,
+  page: null, inited: {}, products: null, customers: null, expiryTimer: null,
+
+  can(perm) { return !perm || !!this.perms[perm]; },
+  canPage(page) {
+    const m = PAGE_META[page];
+    if (!m) return false;
+    if (m.public) return true;
+    return !!this.token && this.can(m.perm);
+  },
+  defaultPage() {
+    if (!this.token) return 'login';
+    if (this.can('settings') && !this.setupDone) return 'setup';
+    return this.can('dashboard') ? 'dashboard' : 'kasir';
+  },
+
+  async start() {
+    hydrateIcons(document);
+    this.renderHeader();
+    this.renderFooter();
+    this.renderLicenseBanner();
+    if (typeof google !== 'undefined' && google.script && google.script.history) {
+      google.script.history.setChangeHandler((e) => {
+        const p = e && e.location && e.location.parameter && e.location.parameter.page;
+        this.go(p || this.defaultPage(), { push: false });
+      });
+    }
+    const wanted = this.boot.page || '';
+    const saved = Store.get('token', null);
+    if (this.boot.dbReady && saved) {
+      this.token = saved;
+      try {
+        const me = await api('apiMe');
+        this.applySession(me);
+      } catch (e) {
+        this.token = null;
+        Store.del('token');
+      }
+    }
+    $('#bootSplash').remove();
+    this.go(wanted && this.canPage(wanted) ? wanted : this.defaultPage(), { push: false, replace: true });
+  },
+
+  applySession(d) {
+    this.token = d.token;
+    Store.set('token', d.token);
+    this.user = d.user;
+    this.perms = d.perms || {};
+    this.settings = d.settings || {};
+    this.license = d.license || this.license;
+    this.ai = d.ai || {};
+    this.setupDone = !!d.setupDone;
+    this.boot.business = { name: this.settings.BUSINESS_NAME, logo: this.settings.LOGO_URL, address: this.settings.BUSINESS_ADDRESS, whatsapp: this.settings.WHATSAPP };
+    this.boot.license = this.license;
+    this.products = null;
+    this.customers = null;
+    clearTimeout(this.expiryTimer);
+    const ms = (d.expiresAt || 0) - Date.now();
+    if (ms > 0 && ms < 2147483647) this.expiryTimer = setTimeout(() => this.sessionExpired('Sesi 8 jam sudah habis. Silakan login lagi.'), ms);
+    this.renderHeader();
+    this.renderNav();
+    this.renderFooter();
+    this.renderLicenseBanner();
+  },
+
+  sessionExpired(msg) {
+    if (!this.token) return;
+    this.clearSession();
+    toast(msg || 'Sesi berakhir. Silakan login lagi.', 'err');
+    this.go('login');
+  },
+
+  clearSession() {
+    this.token = null; this.user = null; this.perms = {};
+    this.products = null; this.customers = null;
+    Store.del('token');
+    this.renderHeader();
+    this.renderNav();
+  },
+
+  async logout() {
+    try { await api('apiLogout'); } catch (e) { /* ignore */ }
+    this.clearSession();
+    toast('Sampai jumpa lagi! 👋', 'ok');
+    this.go('login');
+  },
+
+  go(page, opts) {
+    opts = opts || {};
+    if (!PAGE_META[page]) page = this.defaultPage();
+    if (!this.canPage(page)) {
+      if (this.token) toast('Menu "' + PAGE_META[page].title + '" hanya untuk Owner.', 'err');
+      page = this.defaultPage();
+    }
+    if (page === 'login' && this.token) page = this.defaultPage();
+    if (this.token && this.can('settings') && !this.setupDone && !PAGE_META[page].public && page !== 'setup') page = 'setup';
+
+    $$('#main > .page').forEach((s) => { s.hidden = true; });
+    const sec = document.getElementById('page-' + page);
+    if (sec) sec.hidden = false;
+    this.page = page;
+    document.body.classList.toggle('auth', !this.token || page === 'setup');
+    document.title = PAGE_META[page].title + ' · ' + (this.boot.business && this.boot.business.name || 'KasirWarung AI');
+    this.highlightNav();
+    $('#userMenu').hidden = true;
+    window.scrollTo(0, 0);
+
+    const P = window.Pages[page];
+    if (P) {
+      try {
+        if (!this.inited[page] && P.init) { P.init(); this.inited[page] = true; }
+        if (P.enter) P.enter(opts.params || {});
+      } catch (e) { console.error(e); toast('Gagal membuka halaman: ' + e.message, 'err'); }
+    }
+    if (opts.push !== false && typeof google !== 'undefined' && google.script && google.script.history) {
+      google.script.history.push(null, { page: page });
+    } else if (opts.replace && typeof google !== 'undefined' && google.script && google.script.history) {
+      google.script.history.replace(null, { page: page });
+    }
+  },
+
+  /* ---------- Header ---------- */
+  renderHeader() {
+    const b = this.boot.business || {};
+    $('#brandName').textContent = b.name || 'KasirWarung AI';
+    const logo = $('#brandLogo');
+    logo.innerHTML = '';
+    if (b.logo && /^https:\/\//i.test(b.logo)) {
+      const img = document.createElement('img');
+      img.alt = 'Logo';
+      img.referrerPolicy = 'no-referrer';
+      img.src = b.logo;
+      img.onerror = () => { logo.innerHTML = defaultLogoSvg(); };
+      logo.appendChild(img);
+    } else logo.innerHTML = defaultLogoSvg();
+
+    const btn = $('#userBtn');
+    if (this.user) {
+      btn.hidden = false;
+      $('#userAvatar').textContent = initials(this.user.full_name);
+      $('#userName').textContent = this.user.full_name.split(' ')[0] + ' · ' + this.user.role;
+    } else {
+      btn.hidden = false;
+      $('#userAvatar').innerHTML = icon('user');
+      $('#userName').textContent = 'Masuk';
+    }
+  },
+
+  toggleUserMenu() {
+    const menu = $('#userMenu');
+    if (!this.user) { this.go('login'); return; }
+    if (!menu.hidden) { menu.hidden = true; return; }
+    menu.innerHTML = '<div class="um-head"><b>' + esc(this.user.full_name) + '</b><div class="muted small">@' + esc(this.user.username) + ' · ' + esc(this.user.role) + '</div></div>' +
+      '<button data-act="password">' + icon('lock') + 'Ganti password</button>' +
+      '<button data-act="panduan">' + icon('help') + 'Panduan</button>' +
+      (this.can('settings') ? '<button data-act="pengaturan">' + icon('sliders') + 'Pengaturan</button>' : '') +
+      '<button data-act="logout">' + icon('logout') + 'Keluar</button>';
+    menu.hidden = false;
+    $('#userBtn').setAttribute('aria-expanded', 'true');
+  },
+
+  changePassword() {
+    const m = openModal({
+      title: 'Ganti password',
+      body: '<label class="field"><span>Password lama</span><input type="password" id="cpOld" autocomplete="current-password"></label>' +
+        '<label class="field"><span>Password baru</span><input type="password" id="cpNew" autocomplete="new-password" minlength="6"><span class="hint">Minimal 6 karakter. Jangan gunakan tanggal lahir.</span></label>' +
+        '<label class="field"><span>Ulangi password baru</span><input type="password" id="cpNew2" autocomplete="new-password"></label>',
+      foot: '<button class="btn" data-close>Batal</button><button class="btn btn-primary" id="cpSave">Simpan</button>'
+    });
+    $('#cpSave', m.el).addEventListener('click', async () => {
+      const o = $('#cpOld', m.el).value, n = $('#cpNew', m.el).value, n2 = $('#cpNew2', m.el).value;
+      if (n.length < 6) { toast('Password baru minimal 6 karakter', 'err'); return; }
+      if (n !== n2) { toast('Ulangi password baru belum sama', 'err'); return; }
+      try {
+        await withBusy('Menyimpan…', () => api('apiChangePassword', o, n));
+        m.close();
+        toast('Password berhasil diganti', 'ok');
+      } catch (e) { /* toast shown */ }
+    });
+  },
+
+  /* ---------- Navigation ---------- */
+  navPages() {
+    return Object.keys(PAGE_META).filter((p) => PAGE_META[p].nav && this.canPage(p));
+  },
+
+  renderNav() {
+    const side = $('#sidebar'), bottom = $('#bottomnav');
+    if (!this.token) { side.innerHTML = ''; bottom.innerHTML = ''; bottom.hidden = true; return; }
+    const pages = this.navPages();
+    const item = (p) => '<button class="nav-item" data-go="' + p + '">' + icon(PAGE_META[p].icon) + '<span>' + esc(PAGE_META[p].title) + '</span></button>';
+    side.innerHTML = pages.filter((p) => PAGE_META[p].nav === 1).map(item).join('') + '<div class="nav-sep"></div>' +
+      pages.filter((p) => PAGE_META[p].nav === 2).map(item).join('') +
+      '<div class="nav-cta"><b>Tips:</b> scan barcode langsung di kolom cari Kasir, lalu tekan Enter.</div>';
+
+    const main = (this.can('dashboard') ? ['dashboard', 'kasir', 'pelanggan', 'produk'] : ['kasir', 'pelanggan', 'produk']).filter((p) => this.canPage(p));
+    bottom.innerHTML = main.map((p) => '<button data-go="' + p + '">' + icon(PAGE_META[p].icon) + '<span>' + esc(PAGE_META[p].short || PAGE_META[p].title) + '</span></button>').join('') +
+      '<button data-act="more">' + icon('menu') + '<span>Menu</span></button>';
+    bottom.hidden = false;
+    this.highlightNav();
+  },
+
+  highlightNav() {
+    $$('[data-go]', $('#sidebar')).concat($$('[data-go]', $('#bottomnav'))).forEach((b) => {
+      b.classList.toggle('active', b.getAttribute('data-go') === this.page);
+    });
+  },
+
+  moreMenu() {
+    const pages = this.navPages();
+    const m = openModal({
+      title: 'Menu',
+      body: '<div class="grid">' + pages.map((p) => '<button class="nav-item" data-go="' + p + '">' + icon(PAGE_META[p].icon) + '<span>' + esc(PAGE_META[p].title) + '</span></button>').join('') +
+        '<div class="nav-sep"></div><button class="nav-item" data-act="password">' + icon('lock') + '<span>Ganti password</span></button>' +
+        '<button class="nav-item" data-act="logout">' + icon('logout') + '<span>Keluar</span></button></div>',
+      noFocus: true
+    });
+    m.el.addEventListener('click', (e) => { if (e.target.closest('[data-go],[data-act]')) m.close(); });
+  },
+
+  /* ---------- Footer & licence ---------- */
+  renderFooter() {
+    const a = this.boot.app || { name: 'KasirWarung AI', version: '1.0.0', maker: 'Piyu', year: 2026 };
+    const lic = this.license || this.boot.license || {};
+    const wa = a.supportWa ? '<a target="_blank" rel="noopener" href="' + esc(waLink(a.supportWa, 'Halo Piyu, saya butuh bantuan KasirWarung AI (v' + a.version + ').')) + '">' + 'Dukungan WhatsApp</a>' : '<span>Dukungan: hubungi penjual aplikasi</span>';
+    const licCls = lic.valid ? 'b-green' : 'b-red';
+    $('#footer').innerHTML =
+      '<div class="f-row"><b>© ' + esc(a.year) + ' ' + esc(a.name) + ' · Made by ' + esc(a.maker) + '</b><span class="dot">•</span><span>Versi ' + esc(a.version) + '</span></div>' +
+      '<div class="f-row">' + wa + '<span class="dot">•</span><span>Lisensi: <a href="#" data-go="lisensi"><span class="badge ' + licCls + '">' + esc(lic.label || '-') + '</span></a></span></div>' +
+      '<div class="f-row"><a href="#" data-go="panduan">Panduan</a><span class="dot">•</span><a href="#" data-go="syarat">Syarat Lisensi</a><span class="dot">•</span><a href="#" data-go="privasi">Kebijakan Privasi</a><span class="dot">•</span><a href="#" data-go="tentang">Tentang Aplikasi</a></div>';
+  },
+
+  renderLicenseBanner() {
+    const lic = this.license || this.boot.license || {};
+    const el = $('#licenseBanner');
+    let msg = '';
+    if (lic.status === 'TRIAL_END') msg = 'Masa trial 30 hari sudah berakhir.';
+    else if (lic.status === 'EXPIRED') msg = 'Lisensi sudah kedaluwarsa.';
+    else if (lic.status === 'INVALID') msg = 'Kunci lisensi tidak valid.';
+    else if (lic.status === 'TRIAL' && lic.daysLeft <= 7) msg = 'Trial tinggal ' + lic.daysLeft + ' hari.';
+    if (!msg) { el.hidden = true; return; }
+    el.innerHTML = esc(msg) + ' Data & penjualan tetap aman. <a href="#" data-go="lisensi">Aktifkan lisensi →</a>';
+    el.hidden = false;
+  },
+
+  /* ---------- Shared data caches ---------- */
+  async loadProducts(force) {
+    if (this.products && !force) return this.products;
+    this.products = await api('apiProducts');
+    return this.products;
+  },
+  async loadCustomers(force) {
+    if (this.customers && !force) return this.customers;
+    this.customers = await api('apiCustomers');
+    return this.customers;
+  }
+};
+
+function defaultLogoSvg() {
+  return '<svg viewBox="0 0 40 40" width="34" height="34" aria-hidden="true"><path d="M4 16h32l-4-9H8z" fill="#F97316"/><path d="M11 7l-2 9M17 7l-1 9M23 7l1 9M29 7l2 9" stroke="#FFEDD5" stroke-width="2.2"/><rect x="7" y="16" width="26" height="17" rx="3" fill="#FFF7ED" stroke="#EA580C" stroke-width="2"/><rect x="16" y="22" width="8" height="11" rx="1.5" fill="#FACC15"/></svg>';
+}
+
+/* ---------- Global click delegation ---------- */
+document.addEventListener('click', (e) => {
+  const go = e.target.closest('[data-go]');
+  if (go) { e.preventDefault(); App.go(go.getAttribute('data-go')); return; }
+  const act = e.target.closest('[data-act]');
+  if (act) {
+    const a = act.getAttribute('data-act');
+    if (a === 'logout') { e.preventDefault(); App.logout(); }
+    else if (a === 'password') { e.preventDefault(); $('#userMenu').hidden = true; App.changePassword(); }
+    else if (a === 'more') { e.preventDefault(); App.moreMenu(); }
+    else if (a === 'panduan' || a === 'pengaturan') { e.preventDefault(); App.go(a); }
+    return;
+  }
+  if (e.target.closest('#userBtn')) { App.toggleUserMenu(); return; }
+  if (e.target.closest('#brandLink')) { e.preventDefault(); App.go(App.defaultPage()); return; }
+  if (!e.target.closest('#userMenu')) $('#userMenu').hidden = true;
+});
+
+window.addEventListener('afterprint', () => { $('#printArea').innerHTML = ''; });
+
+App.start();
+</script>

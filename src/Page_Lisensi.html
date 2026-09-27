@@ -1,0 +1,63 @@
+<section class="page" id="page-lisensi" hidden>
+  <div class="page-head">
+    <div>
+      <h1>Lisensi</h1>
+      <p class="sub">Status lisensi KasirWarung AI untuk warung ini.</p>
+    </div>
+  </div>
+  <div class="grid g2">
+    <div class="card" id="lcStatus"></div>
+    <div class="card" id="lcForm">
+      <h2>Aktifkan lisensi</h2>
+      <p class="small muted">Masukkan kunci dari penjual, format <span class="kbd">KWAI-PRO-20271231-AB12CD-1A2B3C4D</span>. Kunci disimpan di Script Properties (LICENSE_KEY).</p>
+      <label class="field"><span>Kunci lisensi</span><input id="lcKey" maxlength="40" autocapitalize="characters" spellcheck="false" placeholder="KWAI-…"></label>
+      <button class="btn btn-primary" id="lcSave"><i data-icon="key"></i>Aktifkan</button>
+      <p class="small muted mt1" id="lcOwnerOnly" hidden>Hanya Owner yang dapat memasukkan kunci lisensi.</p>
+    </div>
+  </div>
+  <div class="card mt2">
+    <h2>Paket</h2>
+    <div class="grid g3">
+      <div><h3>Trial</h3><p class="small">30 hari penuh semua fitur, langsung dari instalasi.</p></div>
+      <div><h3>Standar / Pro</h3><p class="small">Lisensi tahunan untuk 1 warung, termasuk pembaruan & dukungan WhatsApp.</p></div>
+      <div><h3>Seumur Hidup</h3><p class="small">Sekali bayar untuk 1 warung, pembaruan versi 1.x.</p></div>
+    </div>
+    <p class="small muted mb0">Lisensi yang habis tidak menghapus data dan tidak menghentikan penjualan. Baca <a href="#" data-go="syarat">Syarat Lisensi</a>.</p>
+  </div>
+</section>
+<script>
+Pages.lisensi = {
+  init() { $('#lcSave').addEventListener('click', () => this.save()); },
+  async enter() {
+    const owner = App.can('license.edit');
+    $('#lcKey').disabled = !owner; $('#lcSave').disabled = !owner;
+    $('#lcOwnerOnly').hidden = owner;
+    this.render(App.license || App.boot.license || {}, '');
+    if (App.token) {
+      try { const r = await api('apiLicense'); App.license = r.license; this.render(r.license, r.installDate); App.renderFooter(); App.renderLicenseBanner(); } catch (e) { /* ignore */ }
+    }
+  },
+  render(l, installDate) {
+    const cls = l.valid ? 'b-green' : 'b-red';
+    $('#lcStatus').innerHTML = '<h2>Status</h2><div class="k-value" style="font-size:1.3rem;font-weight:900"><span class="badge ' + cls + '" style="font-size:.95rem;padding:6px 12px">' + esc(l.label || '-') + '</span></div>' +
+      '<ul class="list mt1"><li><div class="li-main">Paket</div><b>' + esc(l.plan || '-') + '</b></li>' +
+      (l.expires ? '<li><div class="li-main">Berlaku sampai</div><b>' + esc(fmtDate(l.expires)) + '</b></li>' : '') +
+      (l.daysLeft !== undefined && l.daysLeft !== null ? '<li><div class="li-main">Sisa hari</div><b>' + esc(l.daysLeft) + '</b></li>' : '') +
+      (l.keyMasked ? '<li><div class="li-main">Kunci</div><span class="kbd">' + esc(l.keyMasked) + '</span></li>' : '') +
+      (installDate ? '<li><div class="li-main">Tanggal instalasi</div><b>' + esc(fmtDate(installDate)) + '</b></li>' : '') + '</ul>' +
+      (App.boot.app && App.boot.app.supportWa ? '<a class="btn btn-wa mt1" target="_blank" rel="noopener" href="' + esc(waLink(App.boot.app.supportWa, 'Halo Piyu, saya mau membeli/perpanjang lisensi KasirWarung AI.')) + '">' + icon('wa') + 'Beli / perpanjang via WhatsApp</a>' : '');
+  },
+  async save() {
+    const k = $('#lcKey').value.trim();
+    if (!k) { toast('Masukkan kunci lisensi', 'err'); return; }
+    try {
+      const l = await withBusy('Memeriksa kunci…', () => api('apiSaveLicense', k));
+      App.license = l;
+      $('#lcKey').value = '';
+      this.render(l, '');
+      App.renderFooter(); App.renderLicenseBanner();
+      toast('Lisensi aktif. Terima kasih! 🙏', 'ok');
+    } catch (e) { /* toast */ }
+  }
+};
+</script>
