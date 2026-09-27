@@ -692,16 +692,21 @@ function productOut_(r) {
   };
 }
 
-function productsAll_() {
-  let list = cacheGetJSON_(CACHE_KEYS.PRODUCTS);
+/**
+ * Products list, cached 5 minutes for speed. The cache is cleared by every
+ * write in the app and by onDbEdit() when someone edits the sheet by hand;
+ * fresh=true always reads the sheet.
+ */
+function productsAll_(fresh) {
+  let list = fresh ? null : cacheGetJSON_(CACHE_KEYS.PRODUCTS);
   if (list) return list;
   list = readTable_('Products').rows.map(productOut_);
-  cachePutJSON_(CACHE_KEYS.PRODUCTS, list, 1800);
+  cachePutJSON_(CACHE_KEYS.PRODUCTS, list, 300);
   return list;
 }
 
-function productsForRole_(role) {
-  const list = productsAll_();
+function productsForRole_(role, fresh) {
+  const list = productsAll_(fresh);
   if (role === 'Owner') return list;
   return list.map(function (p) {
     const c = Object.assign({}, p);
@@ -783,6 +788,7 @@ function setupDatabase() {
     const seeded = seedIfEmpty_();
     formatSettingsSheet_();
     protectSheets_(ss);
+    installEditTrigger_(ss);
 
     const p = props_();
     if (!p.getProperty('INSTALL_DATE')) p.setProperty('INSTALL_DATE', ymdKey_(new Date()));
@@ -951,6 +957,28 @@ function protectSheets_(ss) {
       console.warn('Proteksi ' + name + ': ' + e.message);
     }
   });
+}
+
+/**
+ * Installable "on edit" trigger on DB_KasirWarung: when the owner edits the
+ * spreadsheet by hand (e.g. changes stock or prices), the app's caches are
+ * cleared so the change shows up immediately.
+ */
+function installEditTrigger_(ss) {
+  try {
+    ScriptApp.getProjectTriggers().forEach(function (t) {
+      if (t.getHandlerFunction() === 'onDbEdit') ScriptApp.deleteTrigger(t);
+    });
+    ScriptApp.newTrigger('onDbEdit').forSpreadsheet(ss).onEdit().create();
+  } catch (e) {
+    console.warn('Trigger onDbEdit gagal dipasang: ' + e.message);
+  }
+}
+
+/** Trigger target: a manual edit in the spreadsheet invalidates cached data. */
+function onDbEdit(e) {
+  cacheDel_([CACHE_KEYS.PRODUCTS, CACHE_KEYS.SETTINGS]);
+  return true;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1868,9 +1896,9 @@ function apiSaveUser(token, payload) {
 /* Products                                                            */
 /* ------------------------------------------------------------------ */
 
-function apiProducts(token) {
+function apiProducts(token, fresh) {
   return run_(token, 'product.view', function (s) {
-    return productsForRole_(s.role);
+    return productsForRole_(s.role, vBool_(fresh));
   });
 }
 

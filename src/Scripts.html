@@ -744,7 +744,7 @@ const App = {
   /* ---------- Shared data caches ---------- */
   async loadProducts(force) {
     if (this.products && !force) return this.products;
-    this.products = await api('apiProducts');
+    this.products = await api('apiProducts', !!force);
     return this.products;
   },
   async loadCustomers(force) {

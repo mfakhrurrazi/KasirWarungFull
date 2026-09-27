@@ -82,6 +82,9 @@ JIKA ADA MASALAH
     Apps Script → pilih fungsi "bukaKunciLogin" → Run. Kunci langsung terbuka (hanya bisa oleh pemilik script).
   • "Username atau password salah" padahal sudah admin/admin123 → jalankan setupDatabase sekali lagi
     (membuat akun admin bila belum ada), lalu coba login.
+  • Stok/harga diubah langsung di spreadsheet tapi aplikasi belum berubah → tekan tombol muat ulang (⟳)
+    di Kasir atau buka menu Produk. Jalankan setupDatabase sekali setelah update agar perubahan manual
+    di sheet langsung terbaca otomatis. Saran: ubah stok lewat menu Stok Masuk → Opname agar tercatat.
   • Cara lain (24 file terpisah): folder "Source Code" — buat file dengan nama yang SAMA
     (Script: Code, Data, Setup, Reports, AI, TemplateData — HTML: Index, Styles, Scripts, Page_…).
 

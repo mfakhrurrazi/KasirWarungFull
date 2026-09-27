@@ -458,9 +458,9 @@ function apiSaveUser(token, payload) {
 /* Products                                                            */
 /* ------------------------------------------------------------------ */
 
-function apiProducts(token) {
+function apiProducts(token, fresh) {
   return run_(token, 'product.view', function (s) {
-    return productsForRole_(s.role);
+    return productsForRole_(s.role, vBool_(fresh));
   });
 }
 

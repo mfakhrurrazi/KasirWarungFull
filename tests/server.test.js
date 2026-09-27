@@ -393,9 +393,10 @@ test('setup wizard, demo data, backup and licence', () => {
   assert.match(b.name, /^Backup DB_KasirWarung /);
   const trig = ok(gas.api('apiSetBackupTrigger', t, true));
   assert.equal(trig.trigger, true);
-  assert.equal(gas.state.triggers.length, 1);
+  const backups = () => gas.state.triggers.filter((x) => x.fn === 'dailyBackup').length;
+  assert.equal(backups(), 1);
   ok(gas.api('apiSetBackupTrigger', t, true));
-  assert.equal(gas.state.triggers.length, 1, 'no duplicate triggers');
+  assert.equal(backups(), 1, 'no duplicate triggers');
   assert.equal(gas.call('dailyBackup'), 'skip', 'skips within 20h of last backup');
 
   let lic = ok(gas.api('apiLicense', t)).license;
@@ -538,4 +539,28 @@ test('bukaKunciLogin clears the 15-minute lock, only for the script owner', () =
   gas.state.activeUser = 'owner@example.com'; // owner running it from the editor
   assert.equal(gas.call('bukaKunciLogin'), 10);
   login(gas, 'admin', 'admin123');
+});
+
+test('manual edits in the sheet show up in the app (edit trigger + fresh reload)', () => {
+  const gas = boot();
+  const t = login(gas);
+  assert.equal(gas.state.triggers.filter((x) => x.fn === 'onDbEdit' && x.kind === 'onEdit').length, 1, 'edit trigger installed');
+  gas.resetMemo();
+  gas.call('setupDatabase');
+  assert.equal(gas.state.triggers.filter((x) => x.fn === 'onDbEdit').length, 1, 'no duplicate edit trigger');
+  const before = ok(gas.api('apiProducts', t));
+  // Owner types 25 in every stock cell directly in the spreadsheet.
+  const sh = gas.sheet('Products');
+  const col = 12; // 'stock' column
+  for (let r = 2; r <= 11; r++) sh.set(r, col, 25);
+  assert.notEqual(ok(gas.api('apiProducts', t))[0].stock, 25, 'cached list is stale before the trigger');
+  assert.ok(ok(gas.api('apiProducts', t, true)).every((p) => p.stock === 25), 'reload button reads the sheet');
+  // Stale again via cache, then the edit trigger clears it.
+  gas.call('cachePutJSON_', 'products_v1', before, 300);
+  gas.call('onDbEdit', {});
+  assert.ok(ok(gas.api('apiProducts', t)).every((p) => p.stock === 25), 'edit trigger cleared the cache');
+  // Checkout always used the sheet's real stock.
+  const p = before[0];
+  ok(gas.api('apiCheckout', t, { items: [{ product_id: p.product_id, qty: 1 }], method: 'Tunai', paid: 1000000 }));
+  assert.equal(ok(gas.api('apiProducts', t)).find((x) => x.product_id === p.product_id).stock, 24);
 });

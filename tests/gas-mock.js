@@ -308,7 +308,11 @@ function createGas(options) {
     getProjectTriggers: () => state.triggers.slice(),
     deleteTrigger: (t) => { state.triggers = state.triggers.filter((x) => x !== t); },
     newTrigger: (fn) => {
-      const chain = { timeBased: () => chain, everyDays: () => chain, atHour: () => chain, inTimezone: () => chain, create: () => { const t = makeTrigger(fn); state.triggers.push(t); return t; } };
+      const chain = {
+        timeBased: () => chain, everyDays: () => chain, atHour: () => chain, inTimezone: () => chain,
+        forSpreadsheet: () => chain, onEdit: () => { chain.kind = 'onEdit'; return chain; },
+        create: () => { const t = makeTrigger(fn); t.kind = chain.kind || 'time'; state.triggers.push(t); return t; }
+      };
       return chain;
     },
     getService: () => ({ getUrl: () => 'https://script.google.com/macros/s/TEST_DEPLOYMENT/exec' }),

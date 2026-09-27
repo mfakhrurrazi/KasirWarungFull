@@ -38,6 +38,7 @@ function setupDatabase() {
     const seeded = seedIfEmpty_();
     formatSettingsSheet_();
     protectSheets_(ss);
+    installEditTrigger_(ss);
 
     const p = props_();
     if (!p.getProperty('INSTALL_DATE')) p.setProperty('INSTALL_DATE', ymdKey_(new Date()));
@@ -206,6 +207,28 @@ function protectSheets_(ss) {
       console.warn('Proteksi ' + name + ': ' + e.message);
     }
   });
+}
+
+/**
+ * Installable "on edit" trigger on DB_KasirWarung: when the owner edits the
+ * spreadsheet by hand (e.g. changes stock or prices), the app's caches are
+ * cleared so the change shows up immediately.
+ */
+function installEditTrigger_(ss) {
+  try {
+    ScriptApp.getProjectTriggers().forEach(function (t) {
+      if (t.getHandlerFunction() === 'onDbEdit') ScriptApp.deleteTrigger(t);
+    });
+    ScriptApp.newTrigger('onDbEdit').forSpreadsheet(ss).onEdit().create();
+  } catch (e) {
+    console.warn('Trigger onDbEdit gagal dipasang: ' + e.message);
+  }
+}
+
+/** Trigger target: a manual edit in the spreadsheet invalidates cached data. */
+function onDbEdit(e) {
+  cacheDel_([CACHE_KEYS.PRODUCTS, CACHE_KEYS.SETTINGS]);
+  return true;
 }
 
 /* ------------------------------------------------------------------ */

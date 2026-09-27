@@ -683,16 +683,21 @@ function productOut_(r) {
   };
 }
 
-function productsAll_() {
-  let list = cacheGetJSON_(CACHE_KEYS.PRODUCTS);
+/**
+ * Products list, cached 5 minutes for speed. The cache is cleared by every
+ * write in the app and by onDbEdit() when someone edits the sheet by hand;
+ * fresh=true always reads the sheet.
+ */
+function productsAll_(fresh) {
+  let list = fresh ? null : cacheGetJSON_(CACHE_KEYS.PRODUCTS);
   if (list) return list;
   list = readTable_('Products').rows.map(productOut_);
-  cachePutJSON_(CACHE_KEYS.PRODUCTS, list, 1800);
+  cachePutJSON_(CACHE_KEYS.PRODUCTS, list, 300);
   return list;
 }
 
-function productsForRole_(role) {
-  const list = productsAll_();
+function productsForRole_(role, fresh) {
+  const list = productsAll_(fresh);
   if (role === 'Owner') return list;
   return list.map(function (p) {
     const c = Object.assign({}, p);
