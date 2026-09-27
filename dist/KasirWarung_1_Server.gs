@@ -1681,6 +1681,23 @@ function apiLogin(username, password) {
   }
 }
 
+/**
+ * Jalankan dari editor Apps Script (pilih "bukaKunciLogin" → Run) untuk
+ * membuka kunci login setelah 5x salah password, tanpa menunggu 15 menit.
+ * Hanya bekerja untuk pemilik script: pengunjung web app (anonim / akun lain)
+ * ditolak, jadi fungsi ini tidak bisa dipakai untuk menebak password.
+ */
+function bukaKunciLogin() {
+  const me = Session.getEffectiveUser().getEmail();
+  const caller = Session.getActiveUser().getEmail();
+  if (!me || caller !== me) throw new Error('Hanya pemilik script yang boleh membuka kunci login (jalankan dari editor).');
+  const names = readTable_('Users').rows.map(function (r) { return 'fail_' + String(r.username).toLowerCase(); });
+  CacheService.getScriptCache().removeAll(names);
+  logActivity_(me, 'BUKA_KUNCI_LOGIN', '', '', names.length + ' akun');
+  Logger.log('Kunci login dibuka untuk ' + names.length + ' akun. Silakan login lagi.');
+  return names.length;
+}
+
 /* ------------------------------------------------------------------ */
 /* Session & account                                                   */
 /* ------------------------------------------------------------------ */

@@ -527,3 +527,15 @@ test('checkbox FALSE cells on empty rows do not hide the real data size (live DB
   assert.ok(fresh.sheet('Users').getLastRow() <= 11);
   login(fresh, 'admin', 'admin123');
 });
+
+test('bukaKunciLogin clears the 15-minute lock, only for the script owner', () => {
+  const gas = boot();
+  for (let i = 0; i < 5; i++) gas.api('apiLogin', 'admin', 'salah');
+  assert.equal(gas.api('apiLogin', 'admin', 'admin123').code, 'LOCKED');
+  gas.state.activeUser = ''; // anonymous web-app visitor
+  assert.throws(() => gas.call('bukaKunciLogin'), /Hanya pemilik/);
+  assert.equal(gas.api('apiLogin', 'admin', 'admin123').code, 'LOCKED');
+  gas.state.activeUser = 'owner@example.com'; // owner running it from the editor
+  assert.equal(gas.call('bukaKunciLogin'), 10);
+  login(gas, 'admin', 'admin123');
+});

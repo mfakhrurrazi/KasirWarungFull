@@ -328,7 +328,11 @@ function createGas(options) {
     console: { log() {}, warn() {}, error: (...a) => state.logs.push(a.join(' ')), info() {} },
     Logger: { log: (m) => state.logs.push(String(m)) },
     PropertiesService, CacheService, LockService, SpreadsheetApp, DriveApp, Utilities, ScriptApp, UrlFetchApp,
-    Session: { getEffectiveUser: () => ({ getEmail: () => 'owner@example.com' }), getScriptTimeZone: () => 'Asia/Jakarta' },
+    Session: {
+      getEffectiveUser: () => ({ getEmail: () => 'owner@example.com' }),
+      getActiveUser: () => ({ getEmail: () => (state.activeUser === undefined ? 'owner@example.com' : state.activeUser) }),
+      getScriptTimeZone: () => 'Asia/Jakarta'
+    },
     MimeType: { GOOGLE_SHEETS: 'application/vnd.google-apps.spreadsheet' },
     HtmlService: null
   };

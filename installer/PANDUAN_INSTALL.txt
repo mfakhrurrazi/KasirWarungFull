@@ -78,6 +78,10 @@ JIKA ADA MASALAH
   • "SyntaxError" saat Run → file tidak tersalin utuh. Ulangi salin-tempel (gunakan Download + Notepad).
   • "KW_BUNDLED_HTML is not defined" / halaman kosong → file "Tampilan" belum ditempel (Langkah 3).
   • "Exception: You do not have permission" → jalankan setupDatabase lagi dan klik Allow.
+  • "Terlalu banyak percobaan gagal. Coba lagi 15 menit lagi." → tunggu 15 menit, ATAU buka editor
+    Apps Script → pilih fungsi "bukaKunciLogin" → Run. Kunci langsung terbuka (hanya bisa oleh pemilik script).
+  • "Username atau password salah" padahal sudah admin/admin123 → jalankan setupDatabase sekali lagi
+    (membuat akun admin bila belum ada), lalu coba login.
   • Cara lain (24 file terpisah): folder "Source Code" — buat file dengan nama yang SAMA
     (Script: Code, Data, Setup, Reports, AI, TemplateData — HTML: Index, Styles, Scripts, Page_…).
 
