@@ -1,0 +1,669 @@
+<title>Webinar KasirWarung AI</title>
+<meta name="description" content="Materi webinar: aplikasi kasir, stok dan kasbon untuk UMKM dengan Google Apps Script — murah, mudah, bermanfaat.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Nunito:wght@400;600;700;800;900&display=swap">
+<style>
+:root{
+  --bg:#FFF8EF; --surface:#FFFFFF; --surface-2:#FFF1E0; --ink:#2B1D12; --ink-2:#5A4636; --muted:#7E6857; --line:#F0DCC6;
+  --awning:#F97316; --awning-2:#EA580C;
+  --orange:#EA580C; --orange-soft:#FFEDD5;
+  --yellow:#A16207; --yellow-bg:#FACC15; --yellow-soft:#FEF9C3;
+  --green:#15803D; --green-soft:#DCFCE7;
+  --red:#DC2626; --red-soft:#FEE2E2;
+  --blue:#2563EB; --blue-soft:#DBEAFE;
+  --purple:#7C3AED; --purple-soft:#EDE9FE;
+  --teal:#0F766E; --teal-soft:#CCFBF1;
+  --pink:#DB2777; --pink-soft:#FCE7F3;
+  --bar:#E7CBB0; --shadow:0 8px 24px rgba(124,45,18,.09);
+  --display:'Baloo 2','Nunito',system-ui,sans-serif;
+  --body:'Nunito',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#1A120B; --surface:#241910; --surface-2:#2E2116; --ink:#FBEFE2; --ink-2:#E7D3BF; --muted:#BBA08A; --line:#3E2C1E;
+    --orange:#FB923C; --orange-soft:#3A2414; --yellow:#FACC15; --yellow-soft:#382E12;
+    --green:#4ADE80; --green-soft:#12301D; --red:#F87171; --red-soft:#3A1717;
+    --blue:#60A5FA; --blue-soft:#15243D; --purple:#A78BFA; --purple-soft:#271D3F;
+    --teal:#2DD4BF; --teal-soft:#10302C; --pink:#F472B6; --pink-soft:#3A1428;
+    --bar:#5B4332; --shadow:0 8px 24px rgba(0,0,0,.35);
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#1A120B; --surface:#241910; --surface-2:#2E2116; --ink:#FBEFE2; --ink-2:#E7D3BF; --muted:#BBA08A; --line:#3E2C1E;
+  --orange:#FB923C; --orange-soft:#3A2414; --yellow:#FACC15; --yellow-soft:#382E12;
+  --green:#4ADE80; --green-soft:#12301D; --red:#F87171; --red-soft:#3A1717;
+  --blue:#60A5FA; --blue-soft:#15243D; --purple:#A78BFA; --purple-soft:#271D3F;
+  --teal:#2DD4BF; --teal-soft:#10302C; --pink:#F472B6; --pink-soft:#3A1428;
+  --bar:#5B4332; --shadow:0 8px 24px rgba(0,0,0,.35);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:calc(env(safe-area-inset-top,0px) + 76px)}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{animation:none!important;transition:none!important}}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:17px;line-height:1.6;-webkit-font-smoothing:antialiased}
+h1,h2,h3{font-family:var(--display);line-height:1.15;text-wrap:balance;margin:0}
+h2{font-size:clamp(1.7rem,4vw,2.4rem);font-weight:800}
+h3{font-size:1.2rem;font-weight:700}
+p{margin:0}
+a{color:inherit}
+:focus-visible{outline:3px solid var(--yellow-bg);outline-offset:2px;border-radius:6px}
+.num{font-variant-numeric:tabular-nums}
+
+/* ---------- shell ---------- */
+.shell{display:grid;grid-template-columns:270px minmax(0,1fr);gap:36px;max-width:1260px;margin:0 auto;padding-inline:24px;padding-block:24px 96px}
+@media (max-width:900px){.shell{grid-template-columns:minmax(0,1fr);gap:0;padding-inline:16px;padding-block:0 96px}}
+
+/* ---------- agenda sidebar ---------- */
+.toc{position:sticky;top:calc(env(safe-area-inset-top,0px) + 20px);align-self:start;background:var(--surface);border-radius:20px;box-shadow:var(--shadow);overflow:hidden;max-height:calc(100vh - 40px);display:flex;flex-direction:column}
+.toc-awning{height:18px;background:repeating-linear-gradient(90deg,var(--awning) 0 22px,#FFF7ED 22px 44px);position:relative}
+.toc-awning::after{content:"";position:absolute;left:0;right:0;top:100%;height:9px;background:radial-gradient(circle at 11px 0,var(--awning) 9px,transparent 10px) repeat-x;background-size:22px 9px}
+.toc-head{padding:22px 18px 10px}
+.toc-kicker{font-size:.72rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.toc-title{font-family:var(--display);font-size:1.35rem;font-weight:800;margin-top:2px}
+.toc-meter{margin-top:12px;height:10px;border-radius:10px;background:var(--surface-2);overflow:hidden}
+.toc-meter i{display:block;height:100%;width:0;border-radius:10px;background:linear-gradient(90deg,var(--awning),var(--yellow-bg),#22C55E);transition:width .25s}
+.toc-count{display:flex;justify-content:space-between;font-size:.8rem;font-weight:700;color:var(--muted);margin-top:6px}
+.toc ol{list-style:none;margin:0;padding:6px 10px 16px;overflow:auto}
+.toc li a{display:flex;align-items:center;gap:10px;padding:8px 8px;border-radius:12px;text-decoration:none;font-weight:700;font-size:.92rem;color:var(--ink-2);min-height:44px;transition:background .15s}
+.toc li a:hover{background:var(--surface-2)}
+.toc .dot{flex:0 0 auto;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font-size:.78rem;font-weight:900;border:2.5px solid var(--acc);color:var(--acc);background:var(--surface);font-variant-numeric:tabular-nums}
+.toc li.done .dot{background:var(--acc);color:#fff}
+.toc li.done .dot b{display:none}
+.toc li.done .dot::after{content:"";width:9px;height:5px;border-left:2.5px solid #fff;border-bottom:2.5px solid #fff;transform:rotate(-45deg) translate(1px,-1px)}
+.toc li.current a{background:var(--acc-soft);color:var(--ink)}
+.toc li.current .dot{background:var(--acc);color:#fff;box-shadow:0 0 0 4px var(--acc-soft)}
+
+/* mobile top bar + drawer */
+.mtop{display:none}
+@media (max-width:900px){
+  .toc{position:fixed;inset:0 0 0 auto;width:min(86vw,330px);max-height:none;border-radius:0;z-index:60;transform:translateX(105%);transition:transform .22s ease-out;padding-top:env(safe-area-inset-top,0px)}
+  .toc.open{transform:none}
+  .scrim{position:fixed;inset:0;background:rgba(20,12,6,.45);z-index:55}
+  .mtop{display:block;position:sticky;top:0;z-index:40;padding:calc(env(safe-area-inset-top,0px) + 10px) 16px 10px;background:var(--bg);border-bottom:1px solid var(--line)}
+  .mtop-row{display:flex;align-items:center;gap:10px}
+  .mtop-label{flex:1;min-width:0;font-weight:800;font-size:.95rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mtop-label small{display:block;font-size:.72rem;color:var(--muted);font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+  .mtop .toc-meter{margin-top:8px;height:6px}
+}
+.btn-toc{border:0;background:var(--awning);color:#fff;font:inherit;font-weight:800;font-size:.85rem;border-radius:12px;padding:0 14px;min-height:44px;cursor:pointer;box-shadow:0 3px 0 var(--awning-2)}
+
+/* ---------- hero ---------- */
+.hero{position:relative;background:var(--surface);border-radius:26px;box-shadow:var(--shadow);overflow:hidden;margin-bottom:28px}
+@media (max-width:900px){.hero{margin-top:16px}}
+.awning{height:46px;background:repeating-linear-gradient(90deg,var(--awning) 0 40px,#FFF7ED 40px 80px);position:relative}
+.awning::after{content:"";position:absolute;left:0;right:0;top:100%;height:20px;background:radial-gradient(circle at 20px 0,var(--awning) 19px,transparent 20px) repeat-x;background-size:40px 20px}
+.hero-body{padding:44px clamp(20px,4vw,44px) 32px;display:grid;gap:18px}
+.hero-kicker{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:.78rem;font-weight:800;padding:4px 12px;border-radius:999px;background:var(--acc-soft,var(--surface-2));color:var(--acc,var(--ink-2))}
+.pill.maker{background:var(--yellow-bg);color:#5B3A06}
+.hero h1{font-size:clamp(2.2rem,6.2vw,3.9rem);font-weight:800;letter-spacing:-.01em;max-width:18ch}
+.hero h1 mark{background:none;color:var(--orange);position:relative}
+.hero h1 mark::after{content:"";position:absolute;left:0;right:0;bottom:.08em;height:.22em;background:var(--yellow-bg);opacity:.55;z-index:-1;border-radius:4px}
+.hero-lead{font-size:1.1rem;color:var(--ink-2);max-width:62ch}
+.print-toc{display:none}
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:6px}
+@media (max-width:620px){.stats{grid-template-columns:minmax(0,1fr)}}
+.stat{border-radius:18px;padding:14px 16px;background:var(--acc-soft);border:1px solid var(--line)}
+.stat b{display:block;font-family:var(--display);font-size:1.9rem;line-height:1.1;color:var(--acc);font-variant-numeric:tabular-nums}
+.stat span{font-weight:700;font-size:.9rem;color:var(--ink-2)}
+
+/* ---------- chapters ---------- */
+.chapter{--acc:var(--orange);--acc-soft:var(--orange-soft);background:var(--surface);border-radius:26px;box-shadow:var(--shadow);padding:0 clamp(18px,4vw,40px) 34px;margin-bottom:28px;position:relative;overflow:hidden}
+.chapter::before{content:"";display:block;height:12px;margin-inline:calc(-1 * clamp(18px,4vw,40px));background:repeating-linear-gradient(90deg,var(--acc) 0 26px,var(--acc-soft) 26px 52px)}
+.ch-head{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 16px;align-items:center;padding-top:26px;margin-bottom:20px}
+.ch-num{grid-row:span 2;width:62px;height:62px;border-radius:18px;background:var(--acc);color:#fff;font-family:var(--display);font-weight:800;font-size:1.7rem;display:grid;place-items:center;font-variant-numeric:tabular-nums;box-shadow:0 4px 0 rgba(0,0,0,.14)}
+.eyebrow{font-size:.78rem;font-weight:900;letter-spacing:.09em;text-transform:uppercase;color:var(--acc)}
+.lead{font-size:1.08rem;color:var(--ink-2);max-width:66ch;margin-bottom:22px}
+.grid{display:grid;gap:14px}
+.g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+@media (max-width:760px){.g2,.g3{grid-template-columns:minmax(0,1fr)}}
+.card{border-radius:18px;padding:16px 18px;background:var(--surface-2);border:1px solid var(--line)}
+.card h3{margin-bottom:4px}
+.card p{color:var(--ink-2);font-size:.97rem}
+.ic{width:42px;height:42px;border-radius:13px;display:grid;place-items:center;background:var(--acc-soft);color:var(--acc);margin-bottom:10px}
+.ic svg{width:24px;height:24px}
+.take{margin-top:22px;border-radius:18px;padding:14px 18px;background:var(--acc-soft);display:flex;gap:12px;align-items:flex-start;font-weight:700}
+.take svg{flex:0 0 auto;width:26px;height:26px;color:var(--acc);margin-top:1px}
+.take span{color:var(--ink)}
+.note{font-size:.86rem;color:var(--muted);margin-top:12px}
+.split{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,.8fr);gap:22px;align-items:start}
+@media (max-width:760px){.split{grid-template-columns:minmax(0,1fr)}}
+
+/* phones / screenshots */
+.phones{display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
+.phone{width:min(210px,44%);border-radius:26px;padding:8px;background:#2B1D12;box-shadow:var(--shadow)}
+.phone img{display:block;width:100%;border-radius:19px}
+.phone figcaption{color:#F7E6D3;font-size:.78rem;font-weight:700;text-align:center;padding:6px 4px 2px}
+.laptop{border-radius:16px;overflow:hidden;border:6px solid #2B1D12;box-shadow:var(--shadow);max-width:100%}
+.laptop img{display:block;width:100%}
+
+/* receipt (biaya) */
+.receipt{background:#FFFDF7;color:#2B1D12;font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;font-size:.93rem;border-radius:6px;padding:22px 20px 26px;box-shadow:var(--shadow);position:relative;max-width:440px;width:100%;margin-inline:auto}
+.receipt::after{content:"";position:absolute;left:0;right:0;bottom:-10px;height:10px;background:linear-gradient(-45deg,transparent 7px,#FFFDF7 0) 0 0/14px 10px repeat-x,linear-gradient(45deg,transparent 7px,#FFFDF7 0) 0 0/14px 10px repeat-x}
+.receipt h3{font-family:inherit;font-size:1rem;text-align:center;letter-spacing:.08em}
+.receipt .sub{text-align:center;font-size:.78rem;color:#7E6857;margin-bottom:10px}
+.receipt .row{display:flex;justify-content:space-between;gap:10px;padding:3px 0}
+.receipt .row span:last-child{white-space:nowrap;font-weight:700}
+.receipt hr{border:0;border-top:2px dashed #CDB8A3;margin:8px 0}
+.receipt .total{font-size:1.15rem;font-weight:800}
+.receipt .total span:last-child{color:#15803D}
+.receipt .opt{color:#7E6857}
+
+/* steps (mudah dibuat) */
+.steps{list-style:none;margin:0;padding:0;display:grid;gap:12px;counter-reset:s}
+.steps li{display:grid;grid-template-columns:48px minmax(0,1fr) auto;gap:14px;align-items:center;background:var(--surface-2);border:1px solid var(--line);border-radius:18px;padding:12px 16px}
+.steps li::before{counter-increment:s;content:counter(s);width:48px;height:48px;border-radius:14px;display:grid;place-items:center;font-family:var(--display);font-weight:800;font-size:1.4rem;color:#fff;background:var(--c)}
+.steps b{display:block;font-size:1.02rem}
+.steps span{color:var(--ink-2);font-size:.93rem}
+.steps .t{font-weight:900;font-size:.85rem;padding:4px 10px;border-radius:999px;background:var(--surface);color:var(--ink-2);white-space:nowrap;font-variant-numeric:tabular-nums}
+@media (max-width:520px){.steps li{grid-template-columns:40px minmax(0,1fr)}.steps li::before{width:40px;height:40px;font-size:1.2rem}.steps .t{grid-column:2;justify-self:start}}
+
+/* flow (mudah dipakai) */
+.flow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:22px}
+@media (max-width:760px){.flow{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.flow div{border-radius:18px;padding:14px;background:var(--fc-soft);border:2px solid var(--fc);position:relative}
+.flow b{display:block;font-family:var(--display);font-size:1.1rem;color:var(--fc)}
+.flow span{font-size:.9rem;color:var(--ink-2)}
+
+/* calc illustration */
+.calc{border-radius:18px;border:2px dashed var(--acc);padding:16px 18px;margin-top:18px}
+.calc h3{color:var(--acc)}
+.calc table{width:100%;border-collapse:collapse;margin-top:8px;font-size:.95rem}
+.calc td{padding:7px 4px;border-bottom:1px dashed var(--line);vertical-align:top}
+.calc td:last-child{text-align:right;font-weight:800;white-space:nowrap;font-variant-numeric:tabular-nums}
+
+/* range chart */
+.rchart{display:grid;gap:10px}
+.rrow{display:grid;grid-template-columns:minmax(0,230px) minmax(0,1fr) minmax(0,170px);gap:12px;align-items:center}
+.rname{font-weight:800;font-size:.93rem;line-height:1.3}
+.rrow.hl .rname{color:var(--green)}
+.track{position:relative;height:26px;border-radius:8px;background:repeating-linear-gradient(90deg,var(--line) 0 1px,transparent 1px 16.6667%)}
+.range{position:absolute;top:4px;bottom:4px;border-radius:6px;background:var(--bar);min-width:8px}
+.rrow.hl .range{background:var(--green);border-radius:50%;width:18px!important;min-width:18px;top:4px;bottom:4px}
+.range.over{border-radius:6px 0 0 6px}
+.range.over::after{content:"";position:absolute;right:-10px;top:50%;margin-top:-9px;border:9px solid transparent;border-left:10px solid var(--bar);border-right:0}
+.rval{font-size:.86rem;font-weight:700;color:var(--ink-2);font-variant-numeric:tabular-nums}
+.rrow.hl .rval{color:var(--green);font-weight:900}
+.raxis{display:grid;grid-template-columns:minmax(0,230px) minmax(0,1fr) minmax(0,170px);gap:12px}
+.ticks{position:relative;height:20px;font-size:.75rem;color:var(--muted);font-weight:700;font-variant-numeric:tabular-nums}
+.ticks span{position:absolute;transform:translateX(-50%);white-space:nowrap}
+.ticks span:first-child{transform:none}
+.ticks span:last-child{transform:translateX(-100%)}
+@media (max-width:760px){
+  .rrow{grid-template-columns:minmax(0,1fr);gap:4px;padding-bottom:6px;border-bottom:1px dashed var(--line)}
+  .raxis{grid-template-columns:minmax(0,1fr)}
+  .raxis>span{display:none}
+}
+
+/* complexity matrix */
+.table-wrap{overflow-x:auto;border-radius:16px;border:1px solid var(--line)}
+table.mx{width:100%;min-width:760px;border-collapse:collapse;font-size:.93rem;background:var(--surface)}
+.mx th,.mx td{padding:10px 12px;text-align:left;border-bottom:1px solid var(--line);vertical-align:middle}
+.mx th{font-size:.74rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);background:var(--surface-2);white-space:nowrap}
+.mx td:first-child,.mx th:first-child{position:sticky;left:0;background:inherit;z-index:1}
+.mx tbody td:first-child{background:var(--surface);font-weight:800;min-width:190px}
+.mx tr.hl td{background:var(--green-soft)!important}
+.dots{display:inline-flex;gap:3px;align-items:center;white-space:nowrap}
+.dots i{width:10px;height:10px;border-radius:50%;border:2px solid var(--lv);display:inline-block}
+.dots i.f{background:var(--lv)}
+.dots em{font-style:normal;font-weight:900;margin-left:6px;color:var(--ink-2);font-size:.85rem}
+.tag{display:inline-block;font-size:.8rem;font-weight:800;padding:2px 10px;border-radius:999px;white-space:nowrap}
+.tag.y{background:var(--green-soft);color:var(--green)}
+.tag.m{background:var(--yellow-soft);color:var(--yellow)}
+.tag.n{background:var(--red-soft);color:var(--red)}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:.84rem;color:var(--muted);font-weight:700;margin-top:10px}
+
+/* weakness table */
+.weak{display:grid;gap:12px}
+.weak article{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr) minmax(0,1.2fr);gap:14px;border-radius:18px;padding:14px 16px;background:var(--surface-2);border:1px solid var(--line)}
+.weak h3{font-size:1.05rem;display:flex;gap:8px;align-items:center}
+.weak h3 svg{width:20px;height:20px;color:var(--red);flex:0 0 auto}
+.weak .lbl{display:block;font-size:.7rem;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:2px}
+.weak p{font-size:.93rem;color:var(--ink-2)}
+.weak .fix p{color:var(--ink)}
+.weak .fix .lbl{color:var(--green)}
+@media (max-width:760px){.weak article{grid-template-columns:minmax(0,1fr)}}
+
+/* fit */
+.fit{display:grid;gap:10px}
+.fit div{display:grid;grid-template-columns:minmax(0,1fr) 34px minmax(0,1fr);gap:10px;align-items:center}
+.fit .a,.fit .b{border-radius:14px;padding:10px 14px;font-weight:700;font-size:.95rem}
+.fit .a{background:var(--surface-2);border:1px solid var(--line)}
+.fit .b{background:var(--acc-soft);color:var(--ink)}
+.fit svg{width:26px;height:26px;color:var(--acc);justify-self:center}
+.fit-head{font-size:.74rem!important;font-weight:900!important;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);background:none!important;border:0!important;padding:0 14px!important}
+@media (max-width:620px){.fit div{grid-template-columns:minmax(0,1fr)}.fit svg{transform:rotate(90deg)}}
+
+.cta{display:grid;gap:12px;counter-reset:c;list-style:none;margin:0;padding:0}
+.cta li{background:var(--surface-2);border:1px solid var(--line);border-radius:16px;padding:12px 16px;font-weight:700}
+.qa{margin-top:22px;border-radius:22px;padding:26px 22px;text-align:center;background:linear-gradient(135deg,var(--awning),#DB2777);color:#fff}
+.qa h3{font-size:1.8rem}
+.qa p{opacity:.95}
+.foot{text-align:center;color:var(--muted);font-size:.85rem;font-weight:700;padding:8px 0 20px}
+
+/* prev/next */
+.fab{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:calc(env(safe-area-inset-bottom,0px) + 16px);display:flex;gap:8px;z-index:45}
+.fab button{width:52px;height:52px;border-radius:16px;border:0;background:var(--surface);color:var(--ink);box-shadow:var(--shadow);cursor:pointer;display:grid;place-items:center;border:1px solid var(--line)}
+.fab button.next{background:var(--awning);color:#fff;border-color:var(--awning)}
+.fab svg{width:24px;height:24px}
+
+/* print → PDF handout */
+@page{size:A4;margin:12mm 12mm 14mm}
+@media print{
+  :root{color-scheme:light}
+  body{background:#fff;font-size:12.2pt}
+  .toc,.mtop,.fab,.scrim{display:none!important}
+  .shell{display:block;padding:0;max-width:none}
+  .hero,.chapter{box-shadow:none;border:1px solid #F0DCC6;break-inside:auto}
+  .chapter{break-before:page;margin:0}
+  .card,.steps li,.weak article,.flow div,.fit div,.rrow,.take,.calc tr,.receipt{break-inside:avoid}
+  .table-wrap{overflow:visible;border:0}
+  table.mx{min-width:0;font-size:8.6pt;table-layout:auto}
+  .mx th{white-space:normal;font-size:6.8pt}
+  .mx th,.mx td{padding:5px 4px}
+  .mx tbody td:first-child{min-width:0;width:22%}
+  .dots{gap:2px}.dots i{width:7px;height:7px;border-width:1.5px}.dots em{margin-left:3px}
+  .tag{font-size:7.4pt;padding:1px 6px;white-space:normal}
+  .phone{width:150px}
+  .split .phone{width:170px}
+  .laptop{max-width:72%;margin-inline:auto}
+  .rrow,.raxis{grid-template-columns:150px minmax(0,1fr) 130px;gap:10px}
+  .rname,.rval{font-size:8.8pt}
+  .print-toc{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 18px;list-style:none;margin:6px 0 4px;padding:14px 16px;border-radius:16px;background:#FFF1E0}
+  .print-toc li{display:flex;gap:8px;align-items:center;font-weight:700;font-size:10.5pt}
+  .print-toc b{width:22px;height:22px;border-radius:50%;background:var(--acc);color:#fff;display:grid;place-items:center;font-size:8.5pt;flex:0 0 auto}
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
+</style>
+
+<div class="mtop" id="mtop">
+  <div class="mtop-row">
+    <div class="mtop-label"><small id="mtopCount">Bab 1 dari 11</small><span id="mtopTitle">Pembuka</span></div>
+    <button class="btn-toc" id="tocOpen" type="button" aria-controls="toc" aria-expanded="false">Daftar isi</button>
+  </div>
+  <div class="toc-meter" aria-hidden="true"><i id="mtopBar"></i></div>
+</div>
+
+<div class="shell">
+  <nav class="toc" id="toc" aria-label="Agenda webinar">
+    <div class="toc-awning" aria-hidden="true"></div>
+    <div class="toc-head">
+      <div class="toc-kicker">Agenda webinar</div>
+      <div class="toc-title">KasirWarung AI</div>
+      <div class="toc-meter" role="progressbar" aria-label="Kemajuan materi" aria-valuemin="0" aria-valuemax="100" id="meter"><i id="meterBar"></i></div>
+      <div class="toc-count"><span id="tocCount">Bab 1 dari 11</span><span id="tocPct" class="num">0%</span></div>
+    </div>
+    <ol id="tocList"></ol>
+  </nav>
+  <div class="scrim" id="scrim" hidden></div>
+
+  <main>
+    <header class="hero" id="top" style="--acc:var(--orange);--acc-soft:var(--orange-soft)">
+      <div class="awning" aria-hidden="true"></div>
+      <div class="hero-body">
+        <div class="hero-kicker">
+          <span class="pill">Materi webinar UMKM</span>
+          <span class="pill" style="--acc:var(--green);--acc-soft:var(--green-soft)">± 60 menit · 11 bab</span>
+          <span class="pill maker">Made by Piyu</span>
+        </div>
+        <h1>Kasir warung <mark>modal nol rupiah</mark></h1>
+        <p class="hero-lead">Cara warung sembako dan toko kelontong punya aplikasi kasir, stok dan buku kasbon sendiri, cukup dengan HP dan akun Google, memakai teknologi <b>Google Apps Script</b>. Materi ini disusun untuk pemilik usaha, bukan untuk programmer.</p>
+        <ol class="print-toc" id="printToc" aria-hidden="true"></ol>
+        <div class="stats">
+          <div class="stat" style="--acc:var(--green);--acc-soft:var(--green-soft)"><b>Rp 0</b><span>biaya wajib per bulan</span></div>
+          <div class="stat" style="--acc:var(--blue);--acc-soft:var(--blue-soft)"><b>± 15 menit</b><span>dari nol sampai bisa jualan</span></div>
+          <div class="stat" style="--acc:var(--orange);--acc-soft:var(--orange-soft)"><b>1 HP</b><span>Android yang sudah dimiliki</span></div>
+        </div>
+      </div>
+    </header>
+
+    <!-- 1 -->
+    <section class="chapter" id="bab-1" data-title="Pembuka" style="--acc:var(--orange);--acc-soft:var(--orange-soft)">
+      <div class="ch-head"><div class="ch-num">1</div><p class="eyebrow">Pembuka</p><h2>Masalah sehari-hari di warung</h2></div>
+      <p class="lead">Hampir semua warung punya masalah yang sama. Bukan karena pemiliknya kurang rajin, tapi karena semua dicatat di kepala atau di buku tulis.</p>
+      <div class="grid g2">
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div><h3>Buku kasbon hilang atau lupa dicatat</h3><p>Utang pelanggan menumpuk dan sulit ditagih karena tidak ada catatan yang jelas.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4a2 2 0 0 0 1-1.7z"/></svg></div><h3>Stok habis baru ketahuan</h3><p>Pembeli datang mencari minyak goreng, ternyata raknya sudah kosong sejak kemarin.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><h3>Tidak tahu untung hari ini</h3><p>Uang di laci banyak, tapi berapa untung bersihnya setelah modal barang tidak pernah jelas.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div><h3>Barang kedaluwarsa terlambat ketahuan</h3><p>Susu atau roti terbuang karena tidak ada pengingat tanggal kedaluwarsa.</p></div>
+      </div>
+      <h3 style="margin:26px 0 10px">Kenalan dengan KasirWarung AI</h3>
+      <p class="lead" style="margin-bottom:14px">Aplikasi kasir, stok dan buku kasbon yang dibuka lewat browser di HP atau laptop. Datanya tersimpan di Google Sheets milik pemilik warung sendiri.</p>
+      <figure class="laptop" style="margin:0"><img src="{{IMG_DESKTOP}}" alt="Layar kasir KasirWarung AI di laptop: daftar barang dengan label harga kuning dan keranjang belanja di kanan"></figure>
+      <div class="take"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg><span>Teknologi sederhana yang tepat bisa menyelesaikan masalah nyata di warung.</span></div>
+    </section>
+
+    <!-- 2 -->
+    <section class="chapter" id="bab-2" data-title="Murah, bahkan gratis" style="--acc:var(--green);--acc-soft:var(--green-soft)">
+      <div class="ch-head"><div class="ch-num">2</div><p class="eyebrow">Biaya</p><h2>Murah, bahkan gratis</h2></div>
+      <p class="lead">Mari hitung biayanya seperti membaca struk belanja. Semua komponen utama disediakan Google secara gratis untuk pemilik akun Google.</p>
+      <div class="split">
+        <div class="receipt" role="table" aria-label="Rincian biaya KasirWarung AI">
+          <h3>STRUK BIAYA</h3>
+          <div class="sub">KasirWarung AI · 1 warung · per bulan</div>
+          <hr>
+          <div class="row" role="row"><span>Akun Google</span><span>Rp 0</span></div>
+          <div class="row" role="row"><span>Google Sheets (database)</span><span>Rp 0</span></div>
+          <div class="row" role="row"><span>Google Apps Script (aplikasi)</span><span>Rp 0</span></div>
+          <div class="row" role="row"><span>Server &amp; link aplikasi</span><span>Rp 0</span></div>
+          <div class="row" role="row"><span>Backup di Google Drive (15 GB)</span><span>Rp 0</span></div>
+          <div class="row" role="row"><span>HP Android yang sudah ada</span><span>Rp 0</span></div>
+          <hr>
+          <div class="row total" role="row"><span>TOTAL WAJIB</span><span>Rp 0</span></div>
+          <hr>
+          <div class="row opt" role="row"><span>Opsional: printer struk 58 mm</span><span>± Rp 250–450 rb</span></div>
+          <div class="row opt" role="row"><span>Opsional: scanner barcode</span><span>± Rp 150–350 rb</span></div>
+          <div class="row opt" role="row"><span>Opsional: fitur AI</span><span>bisa dimatikan</span></div>
+          <div class="sub" style="margin-top:12px">Perangkat opsional dibeli sekali, bukan langganan.</div>
+        </div>
+        <div class="grid">
+          <div class="card"><h3>Kenapa bisa gratis?</h3><p>Google memberi setiap akun Google jatah pemakaian Apps Script dan Google Sheets setiap hari. Untuk warung dengan puluhan sampai ratusan transaksi per hari, jatah ini lebih dari cukup.</p></div>
+          <div class="card"><h3>Tidak ada biaya bulanan</h3><p>Tidak perlu sewa server, hosting, atau langganan aplikasi. Selama akun Google aktif, aplikasi tetap berjalan.</p></div>
+          <div class="card"><h3>Mulai dari yang ada</h3><p>HP Android yang dipakai sehari-hari sudah cukup. Printer dan scanner bisa dibeli nanti, saat usaha makin ramai.</p></div>
+        </div>
+      </div>
+      <p class="note">Harga perangkat opsional adalah kisaran pasaran dan bisa berbeda di tiap toko.</p>
+      <div class="take"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg><span>Biaya wajibnya Rp 0. Uang yang biasanya habis untuk langganan bisa dipakai menambah stok.</span></div>
+    </section>
+
+    <!-- 3 -->
+    <section class="chapter" id="bab-3" data-title="Mudah dibuat" style="--acc:var(--blue);--acc-soft:var(--blue-soft)">
+      <div class="ch-head"><div class="ch-num">3</div><p class="eyebrow">Membuat aplikasi</p><h2>Mudah dibuat, tanpa menulis kode</h2></div>
+      <p class="lead">Kodenya sudah jadi. Pemilik warung cukup menyalin, menempel, lalu menekan beberapa tombol di Google Drive.</p>
+      <ol class="steps">
+        <li style="--c:var(--orange)"><div><b>Buat project Apps Script di Google Drive</b><span>Baru → Lainnya → Google Apps Script.</span></div><span class="t">1 menit</span></li>
+        <li style="--c:var(--yellow-bg)"><div><b>Tempel 2 file kode</b><span>Salin isi file "Server" dan "Tampilan", tempel, lalu simpan.</span></div><span class="t">5 menit</span></li>
+        <li style="--c:var(--green)"><div><b>Jalankan setupDatabase</b><span>Spreadsheet database lengkap dengan data contoh dibuat otomatis.</span></div><span class="t">2 menit</span></li>
+        <li style="--c:var(--blue)"><div><b>Deploy sebagai Web App</b><span>Google memberi link aplikasi yang bisa dibuka dari HP mana pun.</span></div><span class="t">2 menit</span></li>
+        <li style="--c:var(--pink)"><div><b>Login dan ikuti Setup Wizard</b><span>Isi nama warung, ganti password, pilih data awal. Siap jualan.</span></div><span class="t">5 menit</span></li>
+      </ol>
+      <div class="grid g2" style="margin-top:16px">
+        <div class="card"><h3>Mau diubah? Bisa.</h3><p>Harga, nama barang dan stok bisa diubah langsung di spreadsheet seperti mengisi Excel. Fitur baru bisa ditambahkan oleh siapa saja yang paham JavaScript, atau dengan bantuan AI.</p></div>
+        <div class="card"><h3>Pembaruan versi mudah</h3><p>Tempel file versi baru, lalu pilih "New version" saat deploy. Link aplikasi tetap sama, jadi kasir tidak perlu diberi tahu ulang.</p></div>
+      </div>
+      <div class="take"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg><span>Sekitar 15 menit, 5 langkah, tanpa server dan tanpa menulis kode.</span></div>
+    </section>
+
+    <!-- 4 -->
+    <section class="chapter" id="bab-4" data-title="Mudah dipakai" style="--acc:var(--purple);--acc-soft:var(--purple-soft)">
+      <div class="ch-head"><div class="ch-num">4</div><p class="eyebrow">Memakai aplikasi</p><h2>Mudah dipakai setiap hari</h2></div>
+      <p class="lead">Satu transaksi hanya empat langkah. Tulisan besar, tombol besar dan berbahasa Indonesia, supaya nyaman dipakai pemilik warung segala usia di HP 5 inci.</p>
+      <div class="flow">
+        <div style="--fc:var(--orange);--fc-soft:var(--orange-soft)"><b>1. Cari / scan</b><span>Ketik nama barang atau scan barcode.</span></div>
+        <div style="--fc:var(--yellow);--fc-soft:var(--yellow-soft)"><b>2. Atur jumlah</b><span>Harga paket &amp; grosir terpasang otomatis.</span></div>
+        <div style="--fc:var(--green);--fc-soft:var(--green-soft)"><b>3. Bayar</b><span>Tunai, QRIS, Transfer atau Kasbon.</span></div>
+        <div style="--fc:var(--blue);--fc-soft:var(--blue-soft)"><b>4. Struk</b><span>Cetak struk 58 mm atau kirim lewat WhatsApp.</span></div>
+      </div>
+      <div class="phones">
+        <figure class="phone" style="margin:0"><img src="{{IMG_KASIR}}" alt="Layar kasir di HP dengan daftar barang dan label harga"><figcaption>Layar kasir</figcaption></figure>
+        <figure class="phone" style="margin:0"><img src="{{IMG_SUCCESS}}" alt="Layar transaksi berhasil dengan jumlah kembalian besar"><figcaption>Transaksi berhasil</figcaption></figure>
+        <figure class="phone" style="margin:0"><img src="{{IMG_DASH}}" alt="Beranda pemilik berisi omzet, laba kotor, jumlah transaksi dan total kasbon hari ini"><figcaption>Beranda pemilik</figcaption></figure>
+      </div>
+      <div class="grid g2" style="margin-top:18px">
+        <div class="card"><h3>Pemilik</h3><p>Melihat semua menu: laporan untung, stok masuk, pengaturan, backup dan pengguna.</p></div>
+        <div class="card"><h3>Kasir</h3><p>Hanya jualan, mencatat pelanggan dan kasbon, serta melihat stok. Harga modal dan laporan untung tidak terlihat.</p></div>
+      </div>
+      <div class="take"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg><span>Kalau bisa memakai WhatsApp, pasti bisa memakai KasirWarung AI.</span></div>
+    </section>
+
+    <!-- 5 -->
+    <section class="chapter" id="bab-5" data-title="Manfaat nyata" style="--acc:var(--pink);--acc-soft:var(--pink-soft)">
+      <div class="ch-head"><div class="ch-num">5</div><p class="eyebrow">Manfaat</p><h2>Manfaat yang nyata</h2></div>
+      <p class="lead">Aplikasi yang baik bukan yang paling canggih, tapi yang membuat uang dan waktu tidak lagi bocor.</p>
+      <div class="split">
+        <div class="grid g2">
+          <div class="card"><h3>Kasbon rapi</h3><p>Sisa utang tiap pelanggan, cicilan, dan tanda merah untuk yang lewat jatuh tempo.</p></div>
+          <div class="card"><h3>Tagih dengan sopan</h3><p>Satu ketuk, pesan pengingat yang ramah langsung terbuka di WhatsApp.</p></div>
+          <div class="card"><h3>Stok terpantau</h3><p>Daftar barang yang menipis dan yang hampir kedaluwarsa muncul di beranda.</p></div>
+          <div class="card"><h3>Untung harian terlihat</h3><p>Omzet, laba kotor dan barang terlaris dihitung otomatis setiap hari.</p></div>
+          <div class="card"><h3>Tutup kasir</h3><p>Bandingkan uang di laci dengan catatan sistem. Selisih langsung ketahuan.</p></div>
+          <div class="card"><h3>Saran kulakan</h3><p>Daftar belanja 7 hari ke depan dari data penjualan, dengan atau tanpa AI.</p></div>
+        </div>
+        <figure class="phone" style="margin:0 auto;width:min(230px,70%)"><img src="{{IMG_KASBON}}" alt="Buku kasbon: sisa kasbon Pak Ahmad Rp 70.000 lewat 16 hari dengan tombol Bayar dan Tagih WA"><figcaption>Buku kasbon digital</figcaption></figure>
+      </div>
+      <div class="calc">
+        <h3>Contoh hitungan (ilustrasi)</h3>
+        <table>
+          <tr><td>Kasbon yang lupa ditagih Rp 25.000 per minggu</td><td>± Rp 1,3 juta / tahun</td></tr>
+          <tr><td>Barang kedaluwarsa terbuang Rp 50.000 per bulan</td><td>Rp 600 ribu / tahun</td></tr>
+          <tr><td>Rekap buku manual 30 menit per hari</td><td>± 180 jam / tahun</td></tr>
+        </table>
+        <p class="note">Angka di atas hanya contoh untuk membayangkan besarnya kebocoran kecil. Hasil di tiap warung berbeda.</p>
+      </div>
+      <div class="take"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg><span>Manfaat terbesar datang dari hal sederhana: semua tercatat, tidak ada yang terlupa.</span></div>
+    </section>
+
+    <!-- 6 -->
+    <section class="chapter" id="bab-6" data-title="Perbandingan harga" style="--acc:var(--teal);--acc-soft:var(--teal-soft)">
+      <div class="ch-head"><div class="ch-num">6</div><p class="eyebrow">Perbandingan</p><h2>Perbandingan harga dengan pilihan lain</h2></div>
+      <p class="lead">Perkiraan biaya tahun pertama untuk satu warung. Garis menunjukkan kisaran dari yang termurah sampai termahal di tiap jenis.</p>
+      <div class="rchart" id="rchart" role="img" aria-label="Grafik kisaran biaya tahun pertama berbagai platform kasir"></div>
+      <div class="raxis" aria-hidden="true"><span></span><div class="ticks" id="rticks"></div><span></span></div>
+      <p class="note">Kisaran perkiraan pasar Indonesia, dibulatkan, untuk gambaran saja. Harga tiap penyedia berbeda dan bisa berubah, jadi selalu cek situs resminya. Skala dipotong di Rp 30 juta; aplikasi Android custom bisa jauh di atas itu.</p>
+      <div class="take"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg><span>Hanya Google Apps Script yang biaya wajibnya tetap Rp 0 dan tetap bisa diubah sesuai kebutuhan.</span></div>
+    </section>
+
+    <!-- 7 -->
+    <section class="chapter" id="bab-7" data-title="Perbandingan kerumitan" style="--acc:var(--yellow);--acc-soft:var(--yellow-soft)">
+      <div class="ch-head"><div class="ch-num">7</div><p class="eyebrow">Perbandingan</p><h2>Tingkat kerumitan tiap pilihan</h2></div>
+      <p class="lead">Skor 1 berarti sangat mudah, 5 berarti sangat rumit. Aplikasi siap pakai memang paling mudah dipasang, tapi ada harga yang dibayar: langganan, fitur terbatas, dan data di server orang lain.</p>
+      <div class="table-wrap"><table class="mx" id="mx"></table></div>
+      <div class="legend"><span>Kerumitan:</span><span class="dots" style="--lv:var(--green)"><i class="f"></i> 1–2 mudah</span><span class="dots" style="--lv:var(--yellow)"><i class="f"></i> 3 sedang</span><span class="dots" style="--lv:var(--red)"><i class="f"></i> 4–5 rumit</span></div>
+      <div class="take"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg><span>Google Apps Script ada di tengah: hampir semudah aplikasi siap pakai, tapi sebebas aplikasi buatan sendiri.</span></div>
+    </section>
+
+    <!-- 8 -->
+    <section class="chapter" id="bab-8" data-title="Kelebihan Google Apps Script" style="--acc:var(--green);--acc-soft:var(--green-soft)">
+      <div class="ch-head"><div class="ch-num">8</div><p class="eyebrow">Kelebihan</p><h2>Kelebihan platform Google Apps Script</h2></div>
+      <p class="lead">Google Apps Script adalah layanan dari Google untuk membuat aplikasi kecil yang berjalan di server Google, terhubung langsung dengan Sheets, Drive dan Gmail.</p>
+      <div class="grid g3">
+        <div class="card"><h3>Gratis</h3><p>Cukup akun Google biasa. Tidak ada biaya server atau langganan.</p></div>
+        <div class="card"><h3>Tanpa server sendiri</h3><p>Google yang menjalankan dan merawat mesinnya, 24 jam.</p></div>
+        <div class="card"><h3>Database = Google Sheets</h3><p>Data bisa dibuka, dicetak dan diolah seperti file Excel biasa.</p></div>
+        <div class="card"><h3>Aman</h3><p>Koneksi HTTPS, login per pengguna, sheet penting diproteksi.</p></div>
+        <div class="card"><h3>Terhubung Google</h3><p>Backup otomatis ke Drive, bisa kirim email lewat Gmail, isi kalender.</p></div>
+        <div class="card"><h3>Bisa diubah</h3><p>Kodenya milik sendiri. Fitur bisa ditambah sesuai kebutuhan warung.</p></div>
+        <div class="card"><h3>Dibuka dari mana saja</h3><p>HP, tablet atau laptop, cukup lewat browser.</p></div>
+        <div class="card"><h3>Pembaruan mudah</h3><p>Versi baru tinggal tempel dan deploy. Link aplikasi tetap sama.</p></div>
+        <div class="card"><h3>Bahasa populer</h3><p>Memakai JavaScript, sehingga banyak tutorial dan mudah dibantu AI.</p></div>
+      </div>
+      <div class="take"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg><span>Infrastruktur kelas Google, dengan biaya dan kerumitan kelas warung.</span></div>
+    </section>
+
+    <!-- 9 -->
+    <section class="chapter" id="bab-9" data-title="Kekurangan & batasan" style="--acc:var(--red);--acc-soft:var(--red-soft)">
+      <div class="ch-head"><div class="ch-num">9</div><p class="eyebrow">Jujur soal batasan</p><h2>Kekurangan dalam kondisi tertentu</h2></div>
+      <p class="lead">Tidak ada teknologi yang cocok untuk semua keadaan. Ini kondisi saat Google Apps Script mulai terasa kurang, beserta cara mengatasinya.</p>
+      <div class="weak" id="weak"></div>
+      <p class="note">Angka kuota di atas berlaku untuk akun Google gratis dan dapat berubah sewaktu-waktu. Cek halaman kuota resmi Google Apps Script untuk angka terbaru.</p>
+      <div class="take"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg><span>Batasan ini nyata, tapi jarang dialami warung. Kenali lebih awal supaya tahu kapan harus naik kelas.</span></div>
+    </section>
+
+    <!-- 10 -->
+    <section class="chapter" id="bab-10" data-title="Kenapa cocok untuk UMKM" style="--acc:var(--orange);--acc-soft:var(--orange-soft)">
+      <div class="ch-head"><div class="ch-num">10</div><p class="eyebrow">Kecocokan</p><h2>Kenapa paling cocok untuk UMKM</h2></div>
+      <p class="lead">Kebutuhan UMKM dan kekuatan Google Apps Script ternyata saling mengisi.</p>
+      <div class="fit" id="fit"></div>
+      <div class="card" style="margin-top:18px;--acc:var(--red);--acc-soft:var(--red-soft)"><h3>Kapan sebaiknya memilih yang lain?</h3><p>Minimarket dengan antrean panjang dan banyak kasir sekaligus, jaringan puluhan cabang, atau usaha yang wajib tetap jualan tanpa internet sama sekali. Untuk kondisi seperti itu, sistem POS khusus lebih tepat.</p></div>
+      <div class="take"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg><span>Untuk warung dengan 1–5 kasir dan puluhan sampai ratusan transaksi sehari, Google Apps Script adalah pilihan paling masuk akal.</span></div>
+    </section>
+
+    <!-- 11 -->
+    <section class="chapter" id="bab-11" data-title="Kesimpulan" style="--acc:var(--blue);--acc-soft:var(--blue-soft)">
+      <div class="ch-head"><div class="ch-num">11</div><p class="eyebrow">Penutup</p><h2>Kesimpulan</h2></div>
+      <div class="grid g2">
+        <div class="card" style="--acc:var(--green);--acc-soft:var(--green-soft)"><div class="ic"><b>Rp 0</b></div><h3>Murah</h3><p>Biaya wajib nol rupiah, cukup HP dan akun Google.</p></div>
+        <div class="card" style="--acc:var(--blue);--acc-soft:var(--blue-soft)"><div class="ic"><b>15'</b></div><h3>Mudah</h3><p>Dipasang sekitar 15 menit, dipakai semudah WhatsApp.</p></div>
+        <div class="card" style="--acc:var(--pink);--acc-soft:var(--pink-soft)"><div class="ic"><b>+</b></div><h3>Bermanfaat</h3><p>Kasbon, stok, untung dan kas harian tercatat rapi.</p></div>
+        <div class="card" style="--acc:var(--red);--acc-soft:var(--red-soft)"><div class="ic"><b>!</b></div><h3>Tahu batasannya</h3><p>Butuh internet dan cocok untuk skala warung, bukan minimarket besar.</p></div>
+      </div>
+      <h3 style="margin:24px 0 10px">Tiga langkah setelah webinar ini</h3>
+      <ol class="cta">
+        <li>1. Siapkan akun Google khusus untuk warung, dan aktifkan verifikasi 2 langkah.</li>
+        <li>2. Pasang KasirWarung AI (± 15 menit) dan coba dengan data contoh.</li>
+        <li>3. Minggu ini, pindahkan buku kasbon dan daftar barang ke aplikasi.</li>
+      </ol>
+      <div class="qa"><h3>Sesi tanya jawab</h3><p>Terima kasih sudah mengikuti. Silakan ajukan pertanyaan.</p></div>
+    </section>
+
+    <p class="foot">© 2026 KasirWarung AI · Made by Piyu · Materi webinar untuk UMKM</p>
+  </main>
+</div>
+
+<div class="fab" aria-label="Navigasi bab">
+  <button type="button" id="prevBtn" aria-label="Bab sebelumnya"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></button>
+  <button type="button" id="nextBtn" class="next" aria-label="Bab berikutnya"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></button>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+  var chapters = Array.prototype.slice.call(document.querySelectorAll('.chapter'));
+
+  /* ---------- Bab 6: range chart (scale 0–30 juta) ---------- */
+  var MAX = 30;
+  var costs = [
+    { name: 'KasirWarung AI (Google Apps Script)', min: 0, max: 0, hl: true, label: 'Rp 0 · perangkat opsional' },
+    { name: 'Aplikasi kasir gratis-berbayar (freemium)', min: 0, max: 1.2, label: 'Rp 0 – 1,2 jt / tahun' },
+    { name: 'Aplikasi kasir langganan (SaaS)', min: 1.8, max: 4.2, label: 'Rp 1,8 – 4,2 jt / tahun' },
+    { name: 'Mesin kasir (ECR)', min: 2, max: 6, label: 'Rp 2 – 6 jt sekali beli' },
+    { name: 'Builder no-code (AppSheet, Glide, dll.)', min: 0, max: 6, label: 'Rp 0 – 6 jt / tahun' },
+    { name: 'Website custom (jasa + hosting)', min: 5, max: 25, label: 'Rp 5 – 25 jt' },
+    { name: 'Aplikasi Android custom + server', min: 20, max: 100, over: true, label: 'Rp 20 – 100 jt lebih' }
+  ];
+  var pct = function (v) { return Math.min(v, MAX) / MAX * 100; };
+  $('#rchart').innerHTML = costs.map(function (c) {
+    var left = pct(c.min), width = Math.max(pct(c.max) - left, 0);
+    return '<div class="rrow' + (c.hl ? ' hl' : '') + '" title="' + c.name + ': ' + c.label + '">' +
+      '<div class="rname">' + c.name + '</div>' +
+      '<div class="track"><span class="range' + (c.over ? ' over' : '') + '" style="left:' + left + '%;width:' + width + '%"></span></div>' +
+      '<div class="rval">' + c.label + '</div></div>';
+  }).join('');
+  $('#rticks').innerHTML = [0, 10, 20, 30].map(function (v) {
+    return '<span style="left:' + pct(v) + '%">' + (v === 0 ? 'Rp 0' : v + ' jt') + '</span>';
+  }).join('');
+
+  /* ---------- Bab 7: complexity matrix ---------- */
+  var rows = [
+    ['KasirWarung AI (Google Apps Script)', 2, 1, 1, ['Tidak', 'y'], ['Ya', 'y'], ['Ya, Google Sheets sendiri', 'y'], true],
+    ['Aplikasi kasir freemium', 1, 1, 1, ['Tidak', 'y'], ['Tidak', 'n'], ['Di server penyedia', 'n']],
+    ['Aplikasi kasir langganan (SaaS)', 1, 2, 1, ['Tidak', 'y'], ['Terbatas', 'm'], ['Di server penyedia', 'n']],
+    ['Mesin kasir (ECR)', 2, 2, 2, ['Tidak', 'y'], ['Tidak', 'n'], ['Di mesin', 'm']],
+    ['Builder no-code', 3, 2, 2, ['Sedikit', 'm'], ['Sebagian', 'm'], ['Tergantung layanan', 'm']],
+    ['Website custom', 5, 2, 4, ['Ya', 'n'], ['Ya', 'y'], ['Ya, server sendiri', 'y']],
+    ['Aplikasi Android custom', 5, 1, 5, ['Ya', 'n'], ['Ya', 'y'], ['Ya, server sendiri', 'y']]
+  ];
+  var dots = function (n) {
+    var col = n <= 2 ? 'var(--green)' : (n === 3 ? 'var(--yellow)' : 'var(--red)');
+    var h = '<span class="dots" style="--lv:' + col + '" aria-label="skor ' + n + ' dari 5">';
+    for (var i = 1; i <= 5; i++) h += '<i class="' + (i <= n ? 'f' : '') + '"></i>';
+    return h + '<em>' + n + '</em></span>';
+  };
+  var tag = function (t) { return '<span class="tag ' + t[1] + '">' + t[0] + '</span>'; };
+  $('#mx').innerHTML = '<thead><tr><th>Pilihan</th><th>Membuat</th><th>Memakai</th><th>Merawat</th><th>Perlu ahli IT?</th><th>Bisa diubah?</th><th>Data milik sendiri?</th></tr></thead><tbody>' +
+    rows.map(function (r) {
+      return '<tr' + (r[7] ? ' class="hl"' : '') + '><td>' + r[0] + '</td><td>' + dots(r[1]) + '</td><td>' + dots(r[2]) + '</td><td>' + dots(r[3]) + '</td><td>' + tag(r[4]) + '</td><td>' + tag(r[5]) + '</td><td>' + tag(r[6]) + '</td></tr>';
+    }).join('') + '</tbody>';
+
+  /* ---------- Bab 9: weaknesses ---------- */
+  var warn = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>';
+  var weak = [
+    ['Internet mati', 'Aplikasi tidak bisa dibuka dan transaksi tidak tersimpan, karena belum ada mode offline.', 'Siapkan kuota cadangan atau tethering dari HP lain. Saat darurat, catat di kertas lalu masukkan belakangan.'],
+    ['Toko sangat ramai', 'Setiap simpan transaksi butuh sekitar 1–3 detik, dan transaksi dari banyak kasir diproses antre satu per satu.', 'Nyaman untuk 1–5 kasir. Minimarket dengan antrean panjang lebih cocok memakai POS khusus.'],
+    ['Data bertahun-tahun', 'Satu file Google Sheets dibatasi 10 juta sel. Makin besar file, makin lambat dibuka.', 'Arsipkan per tahun: simpan salinan database lama, lalu mulai file baru.'],
+    ['Kuota harian akun gratis', 'Contoh: satu proses maksimal 6 menit, trigger otomatis total 90 menit per hari, 20.000 panggilan ke internet per hari.', 'Lebih dari cukup untuk warung. Usaha yang lebih besar bisa memakai Google Workspace berbayar dengan kuota lebih tinggi.'],
+    ['Tampilan dan merek', 'Aplikasi dibuka dari alamat script.google.com, dengan pemberitahuan kecil dari Google di bagian atas.', 'Simpan ke layar utama HP supaya terasa seperti aplikasi biasa, atau tautkan dari website usaha.'],
+    ['Perangkat keras khusus', 'Tidak bisa langsung mengendalikan laci uang otomatis, timbangan digital, atau printer USB.', 'Cetak struk lewat printer Bluetooth dengan aplikasi print service seperti RawBT.'],
+    ['Bergantung pada satu akun', 'Jika akun Google pemilik bermasalah atau terkunci, aplikasi ikut berhenti.', 'Aktifkan verifikasi 2 langkah, nyalakan backup harian, dan simpan cara pemulihan akun.'],
+    ['Pembayaran & pajak otomatis', 'QRIS dinamis, payment gateway, atau pelaporan pajak resmi belum tersedia tanpa integrasi tambahan.', 'Mulai dengan QRIS statis. Tambahkan integrasi saat usaha tumbuh.']
+  ];
+  $('#weak').innerHTML = weak.map(function (w) {
+    return '<article><h3>' + warn + w[0] + '</h3><div><span class="lbl">Yang terjadi</span><p>' + w[1] + '</p></div><div class="fix"><span class="lbl">Solusi</span><p>' + w[2] + '</p></div></article>';
+  }).join('');
+
+  /* ---------- Bab 10: fit ---------- */
+  var arrow = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>';
+  var fit = [
+    ['Modal terbatas', 'Biaya wajib Rp 0, tanpa langganan'],
+    ['Pemilik sibuk, bukan orang IT', 'Dipasang ± 15 menit, menu berbahasa Indonesia'],
+    ['Sudah punya HP dan akun Google', 'Tidak perlu membeli perangkat baru'],
+    ['Transaksi puluhan sampai ratusan per hari', 'Kapasitas Google lebih dari cukup'],
+    ['Cara jualan tiap warung berbeda', 'Kasbon, harga paket dan grosir, bisa diubah sesuai kebutuhan'],
+    ['Ingin data tetap milik sendiri', 'Tersimpan di Google Sheets pemilik warung'],
+    ['Takut data hilang', 'Backup otomatis harian ke Google Drive']
+  ];
+  $('#fit').innerHTML = '<div><span class="a fit-head">Ciri UMKM</span><span></span><span class="b fit-head">Jawaban Google Apps Script</span></div>' +
+    fit.map(function (f) { return '<div><span class="a">' + f[0] + '</span>' + arrow + '<span class="b">' + f[1] + '</span></div>'; }).join('');
+
+  /* ---------- Agenda / progress ---------- */
+  var list = $('#tocList');
+  list.innerHTML = chapters.map(function (c, i) {
+    return '<li style="--acc:' + c.style.getPropertyValue('--acc') + ';--acc-soft:' + c.style.getPropertyValue('--acc-soft') + '"><a href="#' + c.id + '"><span class="dot"><b>' + (i + 1) + '</b></span><span>' + c.getAttribute('data-title') + '</span></a></li>';
+  }).join('');
+  var items = Array.prototype.slice.call(list.children);
+  $('#printToc').innerHTML = chapters.map(function (c, i) {
+    return '<li style="--acc:' + c.style.getPropertyValue('--acc') + '"><b>' + (i + 1) + '</b>' + c.getAttribute('data-title') + '</li>';
+  }).join('');
+  var current = -1;
+
+  function setCurrent(i) {
+    if (i === current) return;
+    current = i;
+    items.forEach(function (li, k) {
+      li.classList.toggle('done', k < i);
+      li.classList.toggle('current', k === i);
+      if (k === i) li.querySelector('a').setAttribute('aria-current', 'step'); else li.querySelector('a').removeAttribute('aria-current');
+    });
+    var n = Math.max(i, 0);
+    var label = 'Bab ' + (n + 1) + ' dari ' + chapters.length;
+    $('#tocCount').textContent = label;
+    $('#mtopCount').textContent = label;
+    $('#mtopTitle').textContent = chapters[n].getAttribute('data-title');
+  }
+  function onScroll() {
+    var mid = window.innerHeight * 0.35;
+    var idx = -1;
+    chapters.forEach(function (c, i) { if (c.getBoundingClientRect().top <= mid) idx = i; });
+    setCurrent(idx);
+    var max = document.documentElement.scrollHeight - window.innerHeight;
+    var p = max > 0 ? Math.round(Math.min(1, window.scrollY / max) * 100) : 0;
+    $('#meterBar').style.width = p + '%';
+    $('#mtopBar').style.width = p + '%';
+    $('#tocPct').textContent = p + '%';
+    $('#meter').setAttribute('aria-valuenow', String(p));
+  }
+  window.addEventListener('scroll', onScroll, { passive: true });
+  window.addEventListener('resize', onScroll);
+  onScroll();
+
+  function go(delta) {
+    var target = Math.min(chapters.length - 1, Math.max(0, current + delta));
+    if (current < 0 && delta > 0) target = 0;
+    if (current <= 0 && delta < 0) { document.getElementById('top').scrollIntoView(); return; }
+    chapters[target].scrollIntoView();
+  }
+  $('#prevBtn').addEventListener('click', function () { go(-1); });
+  $('#nextBtn').addEventListener('click', function () { go(1); });
+  document.addEventListener('keydown', function (e) {
+    if (e.target.closest && e.target.closest('input,textarea,select')) return;
+    if (e.key === 'ArrowRight') { e.preventDefault(); go(1); }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); go(-1); }
+  });
+
+  /* mobile drawer */
+  var toc = $('#toc'), scrim = $('#scrim'), openBtn = $('#tocOpen');
+  function drawer(open) {
+    toc.classList.toggle('open', open);
+    scrim.hidden = !open;
+    openBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+  openBtn.addEventListener('click', function () { drawer(true); });
+  scrim.addEventListener('click', function () { drawer(false); });
+  list.addEventListener('click', function () { drawer(false); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') drawer(false); });
+})();
+</script>

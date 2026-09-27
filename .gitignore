@@ -3,3 +3,4 @@ tests/screenshots/
 .clasp.json
 .DS_Store
 __pycache__/
+docs/webinar/_print.html
