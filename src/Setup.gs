@@ -68,14 +68,20 @@ function openOrCreateDb_() {
   if (!ss) {
     try { ss = SpreadsheetApp.getActiveSpreadsheet(); } catch (e) { ss = null; }
   }
+  const home = appFolder_();
   if (!ss) {
-    const it = DriveApp.getFilesByName(DB_NAME);
+    const it = home ? home.getFilesByName(DB_NAME) : DriveApp.getFilesByName(DB_NAME);
     while (it.hasNext()) {
       const f = it.next();
       if (!f.isTrashed() && f.getMimeType() === MimeType.GOOGLE_SHEETS) { ss = SpreadsheetApp.openById(f.getId()); break; }
     }
   }
-  if (!ss) ss = SpreadsheetApp.create(DB_NAME, 1000, 26);
+  if (!ss) {
+    ss = SpreadsheetApp.create(DB_NAME, 1000, 26);
+    if (home) {
+      try { DriveApp.getFileById(ss.getId()).moveTo(home); } catch (e) { console.warn('Tidak bisa memindah DB ke folder aplikasi: ' + e.message); }
+    }
+  }
   if (ss.getName() !== DB_NAME) ss.rename(DB_NAME);
   p.setProperty('SPREADSHEET_ID', ss.getId());
   SS_CACHE_ = ss;
@@ -561,9 +567,26 @@ function folderByProp_(prop, name) {
       if (!f.isTrashed()) return f;
     } catch (e) { /* recreate below */ }
   }
-  const folder = DriveApp.createFolder(name);
+  const home = appFolder_();
+  const folder = home ? home.createFolder(name) : DriveApp.createFolder(name);
   p.setProperty(prop, folder.getId());
   return folder;
+}
+
+/**
+ * The Drive folder that holds this standalone script (e.g. "01. KasirWarung Claude").
+ * DB_KasirWarung, backups and exports are created next to the script so the
+ * whole app lives in one folder. Returns null for My Drive root or bound scripts.
+ */
+function appFolder_() {
+  try {
+    const parents = DriveApp.getFileById(ScriptApp.getScriptId()).getParents();
+    if (!parents.hasNext()) return null;
+    const folder = parents.next();
+    return folder.getId() === DriveApp.getRootFolder().getId() ? null : folder;
+  } catch (e) {
+    return null;
+  }
 }
 
 function backupFolder_() {

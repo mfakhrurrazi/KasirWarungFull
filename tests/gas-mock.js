@@ -207,7 +207,13 @@ function createGas(options) {
   };
 
   const SpreadsheetApp = {
-    create: (name) => { const ss = new Spreadsheet(name, newId('ss')); state.spreadsheets.set(ss.id, ss); return ss; },
+    create: (name) => {
+      const ss = new Spreadsheet(name, newId('ss'));
+      state.spreadsheets.set(ss.id, ss);
+      const f = makeFile(name, null, null);
+      state.files.delete(f.id); f.id = ss.id; f.mimeType = 'application/vnd.google-apps.spreadsheet'; state.files.set(ss.id, f);
+      return ss;
+    },
     openById: (id) => { const ss = state.spreadsheets.get(id); if (!ss) throw new Error('Spreadsheet not found ' + id); return ss; },
     getActiveSpreadsheet: () => null,
     flush: () => {},
@@ -221,7 +227,9 @@ function createGas(options) {
       id: newId('file'), name, blob, trashed: false, created: new Date(), folder,
       getId() { return this.id; }, getName() { return this.name; }, getUrl() { return 'https://drive.google.com/file/d/' + this.id; },
       getDateCreated() { return this.created; }, setTrashed(b) { this.trashed = b; }, isTrashed() { return this.trashed; },
-      getMimeType() { return 'application/octet-stream'; },
+      getMimeType() { return this.mimeType || 'application/octet-stream'; },
+      getParents() { return makeIter(this.folder ? [this.folder] : []); },
+      moveTo(fold) { if (this.folder) this.folder.files = this.folder.files.filter((x) => x !== this); this.folder = fold; fold.files.push(this); return this; },
       makeCopy(n, fold) { const c = makeFile(n, null, fold); fold.files.push(c); return c; }
     };
     state.files.set(f.id, f);
@@ -232,12 +240,16 @@ function createGas(options) {
       id: newId('folder'), name, files: [], trashed: false,
       getId() { return this.id; }, getUrl() { return 'https://drive.google.com/drive/folders/' + this.id; }, isTrashed() { return this.trashed; },
       getFiles() { return makeIter(this.files.filter((f) => !f.trashed)); },
+      getFilesByName(n) { return makeIter(this.files.filter((f) => !f.trashed && f.name === n)); },
+      createFolder(n) { const sub = makeFolder(n); sub.parent = this; return sub; },
       createFile(blob) { const f = makeFile(blob.getName(), blob, this); this.files.push(f); return f; }
     };
     state.folders.set(fo.id, fo);
     return fo;
   };
+  const rootFolder = makeFolder('My Drive');
   const DriveApp = {
+    getRootFolder: () => rootFolder,
     getFilesByName: () => makeIter([]),
     getFileById: (id) => state.files.get(id) || makeFile('ss-' + id, null, null),
     createFolder: makeFolder,
@@ -268,6 +280,11 @@ function createGas(options) {
     sleep: () => {}
   };
 
+  // The script file itself, optionally placed in an app folder (options.appFolderName).
+  const scriptFile = makeFile('KasirWarung AI', null, null);
+  state.scriptId = scriptFile.id;
+  if (options.appFolderName) { state.appFolder = makeFolder(options.appFolderName); scriptFile.moveTo(state.appFolder); }
+
   const makeTrigger = (fn) => ({ fn, getHandlerFunction() { return this.fn; } });
   const ScriptApp = {
     getProjectTriggers: () => state.triggers.slice(),
@@ -276,7 +293,8 @@ function createGas(options) {
       const chain = { timeBased: () => chain, everyDays: () => chain, atHour: () => chain, inTimezone: () => chain, create: () => { const t = makeTrigger(fn); state.triggers.push(t); return t; } };
       return chain;
     },
-    getService: () => ({ getUrl: () => 'https://script.google.com/macros/s/TEST_DEPLOYMENT/exec' })
+    getService: () => ({ getUrl: () => 'https://script.google.com/macros/s/TEST_DEPLOYMENT/exec' }),
+    getScriptId: () => state.scriptId
   };
 
   const UrlFetchApp = {

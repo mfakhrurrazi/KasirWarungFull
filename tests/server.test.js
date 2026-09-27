@@ -461,3 +461,21 @@ test('1,000+ rows: dashboard and report stay within a handful of sheet calls', (
   // products list is cached in chunks (> 100 KB)
   assert.ok(gas.state.cache.has('products_v1#0'), 'chunked cache used');
 });
+
+test('database, backups and exports are created inside the script folder', () => {
+  const gas = createGas({ appFolderName: '01. KasirWarung Claude' });
+  gas.call('setupDatabase');
+  const folder = gas.state.appFolder;
+  const db = gas.state.files.get(gas.state.props.get('SPREADSHEET_ID'));
+  assert.equal(db.folder, folder, 'DB_KasirWarung moved into the app folder');
+  const t = login(gas);
+  ok(gas.api('apiBackupNow', t));
+  const backupFolder = gas.state.folders.get(gas.state.props.get('BACKUP_FOLDER_ID'));
+  assert.equal(backupFolder.parent, folder, 'backup folder inside the app folder');
+  // running setup again reuses the same spreadsheet
+  gas.resetMemo();
+  gas.state.props.delete('SPREADSHEET_ID');
+  const before = db.id;
+  gas.call('setupDatabase');
+  assert.equal(gas.state.props.get('SPREADSHEET_ID'), before, 'existing DB found in the app folder');
+});
