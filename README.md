@@ -60,6 +60,7 @@ Outside `src/`:
 | `templates/Template_Produk_Warung_300.csv` | The 300-item template as a CSV for Excel / Google Sheets |
 | `tools/build_template.py` | Regenerates the template CSV and `src/TemplateData.gs` |
 | `tools/generate-license.js` | Vendor licence-key generator (**keep private**) |
+| `installer/` | One-file installer (`Installer.gs` + manifest) and the Indonesian install guide |
 | `tests/` | Node emulator of the Apps Script services, server tests and a Playwright UI test |
 
 ---
@@ -111,6 +112,10 @@ Pick **one** of these:
    - **+ → Script**: `Code`, `Data`, `Setup`, `Reports`, `AI`, `TemplateData`
    - **+ → HTML**: `Index`, `Styles`, `Scripts`, `Page_Login`, `Page_Setup`, `Page_Dashboard`, `Page_Kasir`, `Page_Produk`, `Page_StokMasuk`, `Page_Pelanggan`, `Page_Laporan`, `Page_Pengaturan`, `Page_Panduan`, `Page_Lisensi`, `Page_Tentang`, `Page_Syarat`, `Page_Privasi`
 3. Paste each file's full content and save (Ctrl+S).
+
+**Alternative with the one-file installer** (`installer/`): enable the *Google Apps Script API* at <https://script.google.com/home/usersettings>, paste `installer/Installer.gs` as `Code.gs` and `installer/Installer_appsscript.json` as `appsscript.json`, then run `install()`. It downloads all 24 files of the pinned commit from this (public) repository and writes them into the project through the Apps Script API. Reload the editor (F5) afterwards. Step-by-step Indonesian instructions: `installer/PANDUAN_INSTALL.txt`.
+
+When the project is a standalone script inside a Drive folder, `setupDatabase()` creates `DB_KasirWarung` and the *Backup* / *Ekspor* folders inside that same folder.
 
 **Alternative with clasp:**
 

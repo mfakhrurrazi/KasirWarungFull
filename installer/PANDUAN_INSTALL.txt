@@ -1,0 +1,74 @@
+PANDUAN INSTALL — KasirWarung AI
+© 2026 KasirWarung AI · Made by Piyu
+
+Waktu yang dibutuhkan: ± 5 menit. Lakukan di laptop/PC (Chrome), login dengan akun Google yang akan menjadi PEMILIK aplikasi.
+Semua data (DB_KasirWarung, folder Backup & Ekspor) otomatis dibuat di folder ini.
+
+
+LANGKAH 1 — Aktifkan Google Apps Script API (sekali saja)
+  1. Buka https://script.google.com/home/usersettings
+  2. Geser "Google Apps Script API" ke posisi ON.
+
+
+LANGKAH 2 — Buat project Apps Script di folder ini
+  1. Buka folder ini di Google Drive → klik "+ Baru" → "Lainnya" → "Google Apps Script".
+  2. Klik judul "Project tanpa judul" → ganti menjadi:  KasirWarung AI
+  3. Klik ikon roda gigi (Project Settings) → centang "Show appsscript.json manifest file in editor".
+
+
+LANGKAH 3 — Tempel installer
+  1. Buka file "Installer.gs" di folder ini → salin SEMUA isinya → tempel menggantikan isi Code.gs di editor.
+  2. Buka file "Installer_appsscript.json" → salin semua isinya → tempel menggantikan isi appsscript.json di editor.
+  3. Tekan Ctrl+S (simpan).
+
+
+LANGKAH 4 — Pasang aplikasi
+  1. Di toolbar editor pilih fungsi "install" → klik "Run".
+  2. Muncul "Authorization required" → Review permissions → pilih akun → "Advanced" → "Go to KasirWarung AI (unsafe)" → Allow.
+     (Peringatan "unsafe" normal untuk script buatan sendiri.)
+  3. Tunggu sampai Execution log menampilkan:  SELESAI: 24 file KasirWarung AI terpasang.
+  4. Tekan F5 untuk memuat ulang editor. Sekarang ada file Code, Data, Setup, Reports, AI, Index, Page_… dll.
+
+
+LANGKAH 5 — Buat database
+  1. Pilih fungsi "setupDatabase" → Run → izinkan akses lagi (Sheets, Drive, trigger, internet).
+  2. Execution log menampilkan link DB_KasirWarung. Spreadsheet ini muncul di folder ini.
+
+
+LANGKAH 6 — (Opsional) Kunci AI & lisensi
+  Project Settings → Script Properties → Add script property:
+    AI_API_KEY   = kunci API AI Anda
+    AI_MODEL     = nama model
+    AI_BASE_URL  = (kosongkan untuk default http://43.133.148.28:20128/v1; disarankan proxy HTTPS)
+    LICENSE_KEY  = kunci lisensi (tanpa ini: trial 30 hari)
+    SUPPORT_WA   = nomor WhatsApp dukungan, mis. 6281234567890
+  Tanpa kunci AI aplikasi tetap berjalan 100% (badge "AI tidak aktif").
+
+
+LANGKAH 7 — Deploy sebagai Web App
+  1. Klik "Deploy" → "New deployment" → ikon roda gigi → "Web app".
+  2. Description: KasirWarung AI v1.0.0
+  3. Execute as: Me (akun Anda)
+  4. Who has access: Anyone
+  5. Klik Deploy → salin "Web app URL" (berakhiran /exec).
+
+
+LANGKAH 8 — Mulai jualan
+  1. Buka URL /exec di HP → login  admin / admin123
+  2. Ikuti Setup Wizard (WAJIB ganti password).
+  3. Chrome Android: menu ⋮ → "Tambahkan ke layar utama".
+  4. Pengaturan → Data & Backup → aktifkan "Backup otomatis".
+
+
+MEMPERBARUI VERSI
+  Tempel file baru → Deploy → Manage deployments → ✎ Edit → Version: New version → Deploy. URL tetap sama.
+
+
+JIKA install() GAGAL
+  • "HTTP 403 ... Apps Script API" → Langkah 1 belum aktif, atau tunggu 2 menit lalu Run lagi.
+  • "Gagal mengunduh" → periksa koneksi internet, lalu Run lagi.
+  • Cara manual: folder "Source Code" berisi 24 file. Buat file dengan nama yang SAMA di editor
+    (Script: Code, Data, Setup, Reports, AI, TemplateData — HTML: Index, Styles, Scripts, Page_…),
+    tempel isinya, dan isi appsscript.json dengan file appsscript.json dari folder tersebut.
+
+Panduan lengkap & daftar uji: README.md di folder "Source Code".
