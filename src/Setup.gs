@@ -129,6 +129,7 @@ function ensureSheet_(ss, name, position) {
     sh.setColumnWidth(i + 1, w);
   });
   applyValidations_(sh, name, 2, body);
+  repairCheckboxes_(sh, name);
   return created;
 }
 
@@ -143,13 +144,27 @@ function applyValidations_(sh, name, fromRow, numRows) {
     const rule = SpreadsheetApp.newDataValidation().requireValueInList(def.lists[col], true).setAllowInvalid(false).build();
     sh.getRange(fromRow, i + 1, numRows, 1).setDataValidation(rule);
   });
-  Object.keys(def.types).forEach(function (col) {
-    if (def.types[col] !== 'bool') return;
-    const i = headers.indexOf(col);
-    if (i < 0) return;
-    const rule = SpreadsheetApp.newDataValidation().requireCheckbox().build();
-    sh.getRange(fromRow, i + 1, numRows, 1).setDataValidation(rule);
+  // Checkboxes are NOT applied here: on empty cells Sheets stores FALSE, which
+  // makes getLastRow() report 1000 rows. appendRows_() adds them per data row.
+}
+
+/**
+ * Keeps checkbox validation on data rows only, and removes the FALSE values
+ * that older builds left in every empty row (they hid the sheet's real size,
+ * so sample data and the admin user were never written).
+ */
+function repairCheckboxes_(sh, name) {
+  const def = SCHEMA[name];
+  const bools = Object.keys(def.types).filter(function (c) { return def.types[c] === 'bool'; });
+  if (!bools.length) return;
+  const t = meta_(name);
+  const firstEmpty = Math.max(t.lastRow, 1) + 1;
+  const maxRows = sh.getMaxRows();
+  bools.forEach(function (col) {
+    if (!(col in t.idx) || firstEmpty > maxRows) return;
+    sh.getRange(firstEmpty, t.idx[col] + 1, maxRows - firstEmpty + 1, 1).clearDataValidations().clearContent();
   });
+  if (t.lastRow >= 2) applyCheckboxes_(t, 2, t.lastRow - 1);
 }
 
 function removeDefaultSheets_(ss) {
@@ -200,7 +215,7 @@ function protectSheets_(ss) {
 const BUSINESS_SHEETS_ = ['Products', 'Customers', 'Sales', 'Credits', 'StockMoves'];
 
 function isEmpty_(name) {
-  return sheet_(name).getLastRow() < 2;
+  return meta_(name).lastRow < 2;
 }
 
 /** Seeds only empty sheets so running setup again never duplicates data. */

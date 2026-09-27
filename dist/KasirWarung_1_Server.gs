@@ -183,7 +183,38 @@ function meta_(name) {
   if (missing.length) {
     throw appError_('SCHEMA', 'Kolom hilang di sheet ' + name + ': ' + missing.join(', ') + '. Jalankan setupDatabase().');
   }
-  return { name: name, sheet: sh, headers: headers, idx: idx, lastRow: sh.getLastRow(), rows: null };
+  const keyCol = need.length ? idx[need[0]] + 1 : 1;
+  return { name: name, sheet: sh, headers: headers, idx: idx, lastRow: lastDataRow_(sh, keyCol), rows: null };
+}
+
+/**
+ * Last row that holds a record, judged by the key column (first schema column:
+ * product_id, username, key, timestamp…). getLastRow() alone is not reliable:
+ * checkbox cells hold FALSE even on empty rows.
+ */
+function lastDataRow_(sh, keyCol) {
+  const last = sh.getLastRow();
+  if (last < 2) return last;
+  const vals = sh.getRange(2, keyCol, last - 1, 1).getValues();
+  for (let i = vals.length - 1; i >= 0; i--) {
+    const v = vals[i][0];
+    if (v !== '' && v !== null && v !== false) return i + 2;
+  }
+  return 1;
+}
+
+function checkboxRule_() {
+  return SpreadsheetApp.newDataValidation().requireCheckbox().build();
+}
+
+/** Checkbox validation only on rows that hold data (never on empty rows). */
+function applyCheckboxes_(t, fromRow, numRows) {
+  if (numRows < 1) return;
+  const types = (SCHEMA[t.name] && SCHEMA[t.name].types) || {};
+  Object.keys(types).forEach(function (col) {
+    if (types[col] !== 'bool' || !(col in t.idx)) return;
+    t.sheet.getRange(fromRow, t.idx[col] + 1, numRows, 1).setDataValidation(checkboxRule_());
+  });
 }
 
 function isBlankRow_(v) {
@@ -275,7 +306,7 @@ function rowFormats_(t) {
 function appendRows_(t, objs) {
   if (!objs || !objs.length) return;
   const sh = t.sheet;
-  const start = Math.max(sh.getLastRow(), 1) + 1;
+  const start = Math.max(t.lastRow, 1) + 1;
   const end = start + objs.length - 1;
   const maxRows = sh.getMaxRows();
   if (end > maxRows) {
@@ -287,6 +318,7 @@ function appendRows_(t, objs) {
   const fmt = rowFormats_(t);
   range.setNumberFormats(objs.map(function () { return fmt; }));
   range.setValues(objs.map(function (o) { return toRow_(t, o); }));
+  applyCheckboxes_(t, start, objs.length);
   objs.forEach(function (o, i) {
     o._row = start + i;
     if (t.rows) t.rows.push(o);
@@ -333,7 +365,11 @@ function writeColumn_(t, col, changed) {
 function clearData_(name) {
   const sh = sheet_(name);
   const last = sh.getLastRow();
-  if (last >= 2) sh.getRange(2, 1, last - 1, sh.getLastColumn()).clearContent();
+  if (last < 2) return;
+  const range = sh.getRange(2, 1, last - 1, sh.getLastColumn());
+  range.clearDataValidations(); // checkboxes first, otherwise cleared cells stay FALSE
+  range.clearContent();
+  if (typeof applyValidations_ === 'function') applyValidations_(sh, name, 2, sh.getMaxRows() - 1);
 }
 
 /* ------------------------------------------------------------------ */
@@ -838,6 +874,7 @@ function ensureSheet_(ss, name, position) {
     sh.setColumnWidth(i + 1, w);
   });
   applyValidations_(sh, name, 2, body);
+  repairCheckboxes_(sh, name);
   return created;
 }
 
@@ -852,13 +889,27 @@ function applyValidations_(sh, name, fromRow, numRows) {
     const rule = SpreadsheetApp.newDataValidation().requireValueInList(def.lists[col], true).setAllowInvalid(false).build();
     sh.getRange(fromRow, i + 1, numRows, 1).setDataValidation(rule);
   });
-  Object.keys(def.types).forEach(function (col) {
-    if (def.types[col] !== 'bool') return;
-    const i = headers.indexOf(col);
-    if (i < 0) return;
-    const rule = SpreadsheetApp.newDataValidation().requireCheckbox().build();
-    sh.getRange(fromRow, i + 1, numRows, 1).setDataValidation(rule);
+  // Checkboxes are NOT applied here: on empty cells Sheets stores FALSE, which
+  // makes getLastRow() report 1000 rows. appendRows_() adds them per data row.
+}
+
+/**
+ * Keeps checkbox validation on data rows only, and removes the FALSE values
+ * that older builds left in every empty row (they hid the sheet's real size,
+ * so sample data and the admin user were never written).
+ */
+function repairCheckboxes_(sh, name) {
+  const def = SCHEMA[name];
+  const bools = Object.keys(def.types).filter(function (c) { return def.types[c] === 'bool'; });
+  if (!bools.length) return;
+  const t = meta_(name);
+  const firstEmpty = Math.max(t.lastRow, 1) + 1;
+  const maxRows = sh.getMaxRows();
+  bools.forEach(function (col) {
+    if (!(col in t.idx) || firstEmpty > maxRows) return;
+    sh.getRange(firstEmpty, t.idx[col] + 1, maxRows - firstEmpty + 1, 1).clearDataValidations().clearContent();
   });
+  if (t.lastRow >= 2) applyCheckboxes_(t, 2, t.lastRow - 1);
 }
 
 function removeDefaultSheets_(ss) {
@@ -909,7 +960,7 @@ function protectSheets_(ss) {
 const BUSINESS_SHEETS_ = ['Products', 'Customers', 'Sales', 'Credits', 'StockMoves'];
 
 function isEmpty_(name) {
-  return sheet_(name).getLastRow() < 2;
+  return meta_(name).lastRow < 2;
 }
 
 /** Seeds only empty sheets so running setup again never duplicates data. */

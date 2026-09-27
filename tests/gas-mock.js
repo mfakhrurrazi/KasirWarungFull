@@ -72,8 +72,23 @@ class Range {
   setValue(v) { return this.setValues([[v]]); }
   setNumberFormat(f) { for (let r = 0; r < this.nr; r++) for (let c = 0; c < this.nc; c++) this.sheet.fmt[(this.row + r) + ':' + (this.col + c)] = f; return this; }
   setNumberFormats(fs2) { for (let r = 0; r < this.nr; r++) for (let c = 0; c < this.nc; c++) this.sheet.fmt[(this.row + r) + ':' + (this.col + c)] = fs2[r][c]; return this; }
-  setDataValidation(rule) { this.sheet.validations.push({ row: this.row, col: this.col, nr: this.nr, nc: this.nc, rule }); return this; }
-  clearContent() { for (let r = 0; r < this.nr; r++) for (let c = 0; c < this.nc; c++) this.sheet.set(this.row + r, this.col + c, ''); return this; }
+  setDataValidation(rule) {
+    this.sheet.validations.push({ row: this.row, col: this.col, nr: this.nr, nc: this.nc, rule });
+    this.each((k, r, c) => {
+      if (rule.checkbox) {
+        this.sheet.checkbox.add(k);
+        // Real Sheets: an empty cell with checkbox validation holds FALSE.
+        if (this.sheet.get(r, c) === '') this.sheet.cells.set(k, false);
+      } else this.sheet.checkbox.delete(k);
+    });
+    return this;
+  }
+  clearDataValidations() { this.each((k) => this.sheet.checkbox.delete(k)); return this; }
+  clearContent() {
+    this.each((k, r, c) => { if (this.sheet.checkbox.has(k)) this.sheet.cells.set(k, false); else this.sheet.set(r, c, ''); });
+    return this;
+  }
+  each(fn) { for (let r = 0; r < this.nr; r++) for (let c = 0; c < this.nc; c++) fn((this.row + r) + ':' + (this.col + c), this.row + r, this.col + c); }
   setFontWeight() { return this; }
   setBackground(c) { this.sheet.headerBg = c; return this; }
   setFontColor() { return this; }
@@ -88,6 +103,7 @@ class Sheet {
     this.cells = new Map();
     this.fmt = {};
     this.validations = [];
+    this.checkbox = new Set();
     this.protections = [];
     this.frozen = 0;
   }

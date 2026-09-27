@@ -174,7 +174,38 @@ function meta_(name) {
   if (missing.length) {
     throw appError_('SCHEMA', 'Kolom hilang di sheet ' + name + ': ' + missing.join(', ') + '. Jalankan setupDatabase().');
   }
-  return { name: name, sheet: sh, headers: headers, idx: idx, lastRow: sh.getLastRow(), rows: null };
+  const keyCol = need.length ? idx[need[0]] + 1 : 1;
+  return { name: name, sheet: sh, headers: headers, idx: idx, lastRow: lastDataRow_(sh, keyCol), rows: null };
+}
+
+/**
+ * Last row that holds a record, judged by the key column (first schema column:
+ * product_id, username, key, timestamp…). getLastRow() alone is not reliable:
+ * checkbox cells hold FALSE even on empty rows.
+ */
+function lastDataRow_(sh, keyCol) {
+  const last = sh.getLastRow();
+  if (last < 2) return last;
+  const vals = sh.getRange(2, keyCol, last - 1, 1).getValues();
+  for (let i = vals.length - 1; i >= 0; i--) {
+    const v = vals[i][0];
+    if (v !== '' && v !== null && v !== false) return i + 2;
+  }
+  return 1;
+}
+
+function checkboxRule_() {
+  return SpreadsheetApp.newDataValidation().requireCheckbox().build();
+}
+
+/** Checkbox validation only on rows that hold data (never on empty rows). */
+function applyCheckboxes_(t, fromRow, numRows) {
+  if (numRows < 1) return;
+  const types = (SCHEMA[t.name] && SCHEMA[t.name].types) || {};
+  Object.keys(types).forEach(function (col) {
+    if (types[col] !== 'bool' || !(col in t.idx)) return;
+    t.sheet.getRange(fromRow, t.idx[col] + 1, numRows, 1).setDataValidation(checkboxRule_());
+  });
 }
 
 function isBlankRow_(v) {
@@ -266,7 +297,7 @@ function rowFormats_(t) {
 function appendRows_(t, objs) {
   if (!objs || !objs.length) return;
   const sh = t.sheet;
-  const start = Math.max(sh.getLastRow(), 1) + 1;
+  const start = Math.max(t.lastRow, 1) + 1;
   const end = start + objs.length - 1;
   const maxRows = sh.getMaxRows();
   if (end > maxRows) {
@@ -278,6 +309,7 @@ function appendRows_(t, objs) {
   const fmt = rowFormats_(t);
   range.setNumberFormats(objs.map(function () { return fmt; }));
   range.setValues(objs.map(function (o) { return toRow_(t, o); }));
+  applyCheckboxes_(t, start, objs.length);
   objs.forEach(function (o, i) {
     o._row = start + i;
     if (t.rows) t.rows.push(o);
@@ -324,7 +356,11 @@ function writeColumn_(t, col, changed) {
 function clearData_(name) {
   const sh = sheet_(name);
   const last = sh.getLastRow();
-  if (last >= 2) sh.getRange(2, 1, last - 1, sh.getLastColumn()).clearContent();
+  if (last < 2) return;
+  const range = sh.getRange(2, 1, last - 1, sh.getLastColumn());
+  range.clearDataValidations(); // checkboxes first, otherwise cleared cells stay FALSE
+  range.clearContent();
+  if (typeof applyValidations_ === 'function') applyValidations_(sh, name, 2, sh.getMaxRows() - 1);
 }
 
 /* ------------------------------------------------------------------ */

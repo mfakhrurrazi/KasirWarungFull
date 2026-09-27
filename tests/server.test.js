@@ -499,3 +499,31 @@ test('all-in-one bundle (dist/) is up to date and runs without HTML files', () =
   assert.match(sale.trx_id, /^TRX\d{6}-\d{3}$/);
   ok(gas.api('apiDashboard', t));
 });
+
+test('checkbox FALSE cells on empty rows do not hide the real data size (live DB bug)', () => {
+  const gas = createGas();
+  gas.call('setupDatabase');
+  // Empty rows never carry checkbox validation / FALSE after setup.
+  const users = gas.sheet('Users');
+  assert.equal(users.get(500, 6), '', 'no FALSE on empty rows');
+  assert.equal(gas.rows('Users').length, 10);
+  // Simulate a DB made by the old build: checkbox validation on every row → FALSE everywhere.
+  const fresh = createGas();
+  fresh.call('setupDatabase');
+  ['Users', 'Products'].forEach((n) => {
+    const sh = fresh.sheet(n);
+    const col = n === 'Users' ? 6 : 15;
+    const last = sh.getLastRow();
+    for (let r = 2; r <= last; r++) for (let c = 1; c <= sh.getLastColumn(); c++) sh.set(r, c, '');
+    sh.getRange(2, col, sh.getMaxRows() - 1, 1).setDataValidation({ checkbox: true });
+    assert.equal(sh.getLastRow(), 1000, n + ' looks full, like the live DB');
+  });
+  ['Customers', 'Sales', 'Credits', 'StockMoves'].forEach((n) => fresh.call('clearData_', n));
+  fresh.resetMemo();
+  fresh.call('setupDatabase'); // repair run
+  assert.equal(fresh.rows('Users').length, 10, 'admin + sample users written');
+  assert.equal(fresh.rows('Products').length, 10, 'sample products written');
+  assert.equal(fresh.sheet('Users').get(500, 6), '', 'FALSE removed from empty rows');
+  assert.ok(fresh.sheet('Users').getLastRow() <= 11);
+  login(fresh, 'admin', 'admin123');
+});
