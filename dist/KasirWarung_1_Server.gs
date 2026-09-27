@@ -3186,7 +3186,9 @@ function callAI(feature, messages, user) {
     followRedirects: true
   };
   let lastErr = '';
-  for (let attempt = 0; attempt < 2; attempt++) {
+  let wait = 1200;
+  // 429 (rate limit) gets one extra attempt and honours Retry-After (max 10 s).
+  for (let attempt = 0, max = 2; attempt < max; attempt++) {
     try {
       const res = UrlFetchApp.fetch(cfg.base + '/chat/completions', options);
       const code = res.getResponseCode();
@@ -3200,16 +3202,45 @@ function callAI(feature, messages, user) {
         }
         lastErr = 'jawaban kosong';
       } else {
-        lastErr = 'HTTP ' + code;
+        const detail = aiErrorDetail_(res);
+        lastErr = 'HTTP ' + code + (detail ? ': ' + detail : '');
         if (code >= 400 && code < 500 && code !== 408 && code !== 429) break;
+        if (code === 429) {
+          if (/quota|insufficient|billing|credit|kuota|saldo|limit.*(day|daily|month)/i.test(detail)) break; // habis kuota: retry sia-sia
+          max = 3;
+          wait = retryAfterMs_(res) || (attempt === 0 ? 3000 : 6000);
+        }
       }
     } catch (e) {
       lastErr = e.message;
     }
-    if (attempt === 0) Utilities.sleep(1200);
+    if (attempt < max - 1) Utilities.sleep(wait);
   }
   logAi_(user, feature, 'ERROR: ' + lastErr + ' → fallback');
   return { ok: false, reason: lastErr };
+}
+
+/** Short, key-free error text from a non-2xx AI response body. */
+function aiErrorDetail_(res) {
+  let body = '';
+  try { body = String(res.getContentText() || '').trim(); } catch (e) { return ''; }
+  let msg = body;
+  try {
+    const j = JSON.parse(body);
+    const er = j && (j.error !== undefined ? j.error : j);
+    msg = typeof er === 'string' ? er : (er && (er.message || er.detail || er.msg)) || j.message || j.detail || body;
+  } catch (e) { /* plain text / HTML */ }
+  msg = String(msg).replace(/<[^>]*>/g, ' ').replace(/(sk-|Bearer\s+)[\w.-]+/gi, '$1***').replace(/\s+/g, ' ').trim();
+  return msg.substring(0, 160);
+}
+
+function retryAfterMs_(res) {
+  try {
+    const h = typeof res.getHeaders === 'function' ? res.getHeaders() : {};
+    const v = h['Retry-After'] || h['retry-after'];
+    const sec = Number(v);
+    return sec > 0 ? Math.min(sec, 10) * 1000 : 0;
+  } catch (e) { return 0; }
 }
 
 /**
@@ -3269,8 +3300,11 @@ function fallbackReason_(reason) {
   if (reason === 'OFF') return 'AI dimatikan di Pengaturan — memakai hitungan otomatis.';
   if (reason === 'NO_CONFIG') return 'Kunci AI belum diatur — memakai hitungan otomatis.';
   if (reason === 'PARSE') return 'Jawaban AI tidak terbaca — memakai hitungan otomatis.';
-  const why = /^HTTP \d+$/.test(String(reason || '')) ? ' (' + reason + ')' : '';
-  return 'AI sedang tidak bisa dihubungi' + why + ' — memakai hitungan otomatis.';
+  const code = (String(reason || '').match(/^HTTP (\d+)/) || [])[1];
+  if (code === '429') return 'Server AI menolak karena batas pemakaian tercapai (HTTP 429) — memakai hitungan otomatis. Coba lagi beberapa menit lagi.';
+  if (code === '401' || code === '403') return 'Kunci AI ditolak server (HTTP ' + code + ') — periksa AI_API_KEY. Memakai hitungan otomatis.';
+  if (code === '404') return 'Alamat/model AI tidak ditemukan (HTTP 404) — periksa AI_BASE_URL dan AI_MODEL. Memakai hitungan otomatis.';
+  return 'AI sedang tidak bisa dihubungi' + (code ? ' (HTTP ' + code + ')' : '') + ' — memakai hitungan otomatis.';
 }
 
 function fmtQty_(n) {

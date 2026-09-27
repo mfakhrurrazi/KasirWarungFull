@@ -344,6 +344,21 @@ test('AI features fall back when disabled, unconfigured or failing, and log to L
   assert.equal(bad.ok, false);
   assert.match(bad.detail, /model not found/);
 
+  // rate limited → up to 3 attempts, server message kept for the owner
+  calls = 0;
+  gas.state.fetchHandler = () => { calls++; return { code: 429, body: { error: { message: 'Rate limit exceeded for sk-abc123, try again in 20s' } } }; };
+  const rl = ok(gas.api('apiAiTest', t));
+  assert.equal(rl.ok, false);
+  assert.equal(calls, 3);
+  assert.match(rl.reason, /batas pemakaian/);
+  assert.match(rl.detail, /^HTTP 429: Rate limit exceeded/);
+  assert.equal(rl.detail.indexOf('abc123'), -1, 'key-like text masked');
+  // quota exhausted → no pointless retry
+  calls = 0;
+  gas.state.fetchHandler = () => { calls++; return { code: 429, body: { error: { message: 'You exceeded your current quota' } } }; };
+  ok(gas.api('apiAiTest', t));
+  assert.equal(calls, 1);
+
   // failing endpoint → one retry then fallback
   calls = 0;
   gas.state.fetchHandler = () => { calls++; return { code: 502, body: 'bad gateway' }; };
