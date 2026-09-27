@@ -321,6 +321,29 @@ test('AI features fall back when disabled, unconfigured or failing, and log to L
   const tg2 = ok(gas.api('apiAiPesanTagih', t, cust.customer_id));
   assert.equal(tg2.source, 'ai');
 
+  // gateway quirks: keep-alive padding + trailing data, SSE chunks, concatenated JSON
+  const reply = (content) => JSON.stringify({ id: 'x', object: 'chat.completion', choices: [{ message: { role: 'assistant', content } }] });
+  const variants = [
+    '\n \n\n  \n' + reply('Halo {padding} "ok"') + '\n{"usage":{"total_tokens":5}}',
+    reply('Halo {padding} "ok"') + '\ndata: [DONE]\n',
+    'data: {"choices":[{"delta":{"role":"assistant"}}]}\n\ndata: {"choices":[{"delta":{"content":"Halo {padding} "}}]}\n\n' +
+      'data: {"choices":[{"delta":{"content":"\\"ok\\""}}]}\n\ndata: [DONE]\n\n',
+    '{"choices":[{"delta":{"content":"Halo {padding} "}}]}{"choices":[{"delta":{"content":"\\"ok\\""}}]}'
+  ];
+  variants.forEach((body, i) => {
+    gas.state.fetchHandler = (url, opts) => {
+      assert.equal(JSON.parse(opts.payload).stream, false);
+      return { code: 200, body };
+    };
+    const at = ok(gas.api('apiAiTest', t));
+    assert.equal(at.ok, true, 'variant ' + i + ': ' + at.detail);
+    assert.equal(at.reply, 'Halo {padding} "ok"', 'variant ' + i);
+  });
+  gas.state.fetchHandler = () => ({ code: 200, body: '{"error":{"message":"model not found"}}' });
+  const bad = ok(gas.api('apiAiTest', t));
+  assert.equal(bad.ok, false);
+  assert.match(bad.detail, /model not found/);
+
   // failing endpoint → one retry then fallback
   calls = 0;
   gas.state.fetchHandler = () => { calls++; return { code: 502, body: 'bad gateway' }; };

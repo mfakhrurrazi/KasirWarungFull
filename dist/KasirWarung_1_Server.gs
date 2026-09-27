@@ -3181,7 +3181,7 @@ function callAI(feature, messages, user) {
     method: 'post',
     contentType: 'application/json',
     headers: { Authorization: 'Bearer ' + cfg.key },
-    payload: JSON.stringify({ model: cfg.model, messages: messages, temperature: 0.4 }),
+    payload: JSON.stringify({ model: cfg.model, messages: messages, temperature: 0.4, stream: false }),
     muteHttpExceptions: true,
     followRedirects: true
   };
@@ -3191,8 +3191,7 @@ function callAI(feature, messages, user) {
       const res = UrlFetchApp.fetch(cfg.base + '/chat/completions', options);
       const code = res.getResponseCode();
       if (code >= 200 && code < 300) {
-        const j = JSON.parse(res.getContentText());
-        let text = j && j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
+        let text = aiReplyText_(res.getContentText());
         text = String(text || '').replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
         if (text) {
           if (text.length < 90000) cache.put(cacheKey, text, 21600);
@@ -3213,11 +3212,65 @@ function callAI(feature, messages, user) {
   return { ok: false, reason: lastErr };
 }
 
+/**
+ * Extracts the assistant text from a chat/completions response body.
+ * Besides plain JSON it accepts what some OpenAI-compatible gateways send:
+ * keep-alive whitespace before the JSON, extra data after it, SSE
+ * ("data: {...}" lines, even when stream:false was requested) and several
+ * concatenated JSON objects (streaming chunks with choices[].delta).
+ */
+function aiReplyText_(body) {
+  body = String(body || '').replace(/^\uFEFF/, '').trim();
+  let objs = [];
+  try {
+    objs = [JSON.parse(body)];
+  } catch (e) {
+    const src = body.split(/\r?\n/)
+      .filter(function (l) { return !/^(event|id|retry)\s*:|^:/.test(l); })
+      .map(function (l) { return l.replace(/^data\s*:\s?/, ''); }).join('\n');
+    objs = jsonObjects_(src);
+    if (!objs.length) throw new Error('format jawaban AI tidak dikenal: ' + body.substring(0, 80));
+  }
+  let full = '';
+  let delta = '';
+  objs.forEach(function (j) {
+    if (j && j.error) throw new Error('AI: ' + String(j.error.message || j.error).substring(0, 150));
+    const c = j && j.choices && j.choices[0];
+    if (!c) return;
+    if (c.message && c.message.content && !full) full = String(c.message.content);
+    else if (c.delta && c.delta.content) delta += String(c.delta.content);
+    else if (typeof c.text === 'string' && !full) full = c.text;
+  });
+  return full || delta;
+}
+
+/** Parses every top-level {...} object in a string (string/escape aware). */
+function jsonObjects_(s) {
+  const out = [];
+  let depth = 0, start = -1, inStr = false, esc = false;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === '\\') esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') { if (depth > 0) inStr = true; }
+    else if (ch === '{') { if (depth++ === 0) start = i; }
+    else if (ch === '}' && depth > 0 && --depth === 0) {
+      try { out.push(JSON.parse(s.substring(start, i + 1))); } catch (e) { /* skip */ }
+    }
+  }
+  return out;
+}
+
 function fallbackReason_(reason) {
   if (reason === 'OFF') return 'AI dimatikan di Pengaturan — memakai hitungan otomatis.';
   if (reason === 'NO_CONFIG') return 'Kunci AI belum diatur — memakai hitungan otomatis.';
   if (reason === 'PARSE') return 'Jawaban AI tidak terbaca — memakai hitungan otomatis.';
-  return 'AI sedang tidak bisa dihubungi — memakai hitungan otomatis.';
+  const why = /^HTTP \d+$/.test(String(reason || '')) ? ' (' + reason + ')' : '';
+  return 'AI sedang tidak bisa dihubungi' + why + ' — memakai hitungan otomatis.';
 }
 
 function fmtQty_(n) {
@@ -3445,9 +3498,9 @@ function apiAiTest(token) {
       const t0 = Date.now();
       const res = callAI(AI_FEATURE.TEST, [
         { role: 'system', content: 'Jawab singkat dalam Bahasa Indonesia.' },
-        { role: 'user', content: 'Balas persis: SIAP MEMBANTU WARUNG (' + t0 + ')' }
+        { role: 'user', content: 'Balas persis: SIAP MEMBANTU WARUNG (' + t0 + '-' + Math.floor(Math.random() * 1e6) + ')' }
       ], s.username);
-      return { ok: res.ok, reply: res.ok ? res.text.substring(0, 200) : '', reason: res.ok ? '' : fallbackReason_(res.reason), ms: Date.now() - t0, status: aiStatus_() };
+      return { ok: res.ok, reply: res.ok ? res.text.substring(0, 200) : '', reason: res.ok ? '' : fallbackReason_(res.reason), detail: res.ok ? '' : String(res.reason || '').substring(0, 200), ms: Date.now() - t0, status: aiStatus_() };
     });
   });
 }

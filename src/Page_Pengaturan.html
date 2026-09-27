@@ -163,7 +163,7 @@ Pages.pengaturan = {
       const r = await api('apiAiTest');
       $('#aiTestOut').innerHTML = r.ok
         ? '<div class="notice n-ok">' + icon('check') + '<span>Tersambung dalam ' + (r.ms / 1000).toFixed(1).replace('.', ',') + ' detik. Jawaban: "' + esc(r.reply) + '"</span></div>'
-        : '<div class="notice n-err">' + icon('alert') + '<span>' + esc(r.reason) + '</span></div>';
+        : '<div class="notice n-err">' + icon('alert') + '<span>' + esc(r.reason) + (r.detail ? '<br><small>Detail: ' + esc(r.detail) + '</small>' : '') + '</span></div>';
       this.renderAi(r.status);
     } catch (e) { $('#aiTestOut').innerHTML = '<div class="notice n-err">' + esc(e.message) + '</div>'; }
   },
