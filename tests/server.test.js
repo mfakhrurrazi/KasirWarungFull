@@ -479,3 +479,23 @@ test('database, backups and exports are created inside the script folder', () =>
   gas.call('setupDatabase');
   assert.equal(gas.state.props.get('SPREADSHEET_ID'), before, 'existing DB found in the app folder');
 });
+
+test('all-in-one bundle (dist/) is up to date and runs without HTML files', () => {
+  const { build } = require('../tools/build_bundle');
+  const fs = require('fs');
+  const path = require('path');
+  const out = build();
+  Object.keys(out).forEach((f) => {
+    assert.equal(fs.readFileSync(path.join(__dirname, '..', 'dist', f), 'utf8'), out[f], f + ' is stale — run node tools/build_bundle.js');
+  });
+  const gas = createGas({ bundle: true });
+  gas.call('setupDatabase');
+  const t = login(gas);
+  const html = gas.call('doGet', { parameter: { page: 'kasir' } }).getContent();
+  assert.ok(html.indexOf('<?') < 0);
+  ['page-login', 'page-dashboard', 'page-kasir', 'page-pelanggan', 'page-privasi'].forEach((id) => assert.ok(html.indexOf('id="' + id + '"') >= 0, id));
+  const p = ok(gas.api('apiProducts', t));
+  const sale = ok(gas.api('apiCheckout', t, { items: [{ product_id: p[0].product_id, qty: 1 }], method: 'Tunai', paid: 100000 }));
+  assert.match(sale.trx_id, /^TRX\d{6}-\d{3}$/);
+  ok(gas.api('apiDashboard', t));
+});

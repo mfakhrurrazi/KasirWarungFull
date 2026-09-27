@@ -13,6 +13,8 @@ const vm = require('vm');
 
 const SRC = path.join(__dirname, '..', 'src');
 const GS_ORDER = ['Data.gs', 'Setup.gs', 'Code.gs', 'Reports.gs', 'AI.gs', 'TemplateData.gs'];
+const DIST = path.join(__dirname, '..', 'dist');
+const BUNDLE_FILES = ['KasirWarung_1_Server.gs', 'KasirWarung_2_Tampilan.gs'];
 
 function signed(buf) { return Array.from(buf).map((b) => (b > 127 ? b - 256 : b)); }
 function unsigned(arr) { return Buffer.from(arr.map((b) => (b < 0 ? b + 256 : b))); }
@@ -319,9 +321,16 @@ function createGas(options) {
   const readHtml = (name) => fs.readFileSync(path.join(SRC, name + '.html'), 'utf8');
   ctx.HtmlService = {
     XFrameOptionsMode: { DEFAULT: 'DEFAULT', ALLOWALL: 'ALLOWALL' },
-    createHtmlOutputFromFile: (name) => { const c = readHtml(name); return { getContent: () => c }; },
+    createHtmlOutputFromFile: (name) => {
+      if (options.bundle) throw new Error('Bundle mode: HTML file "' + name + '" must come from KW_BUNDLED_HTML');
+      const c = readHtml(name); return { getContent: () => c };
+    },
     createTemplateFromFile: (name) => {
-      const tpl = { _src: readHtml(name) };
+      if (options.bundle) throw new Error('Bundle mode: template "' + name + '" must come from KW_BUNDLED_HTML');
+      return ctx.HtmlService.createTemplate(readHtml(name));
+    },
+    createTemplate: (source) => {
+      const tpl = { _src: String(source) };
       tpl.evaluate = () => {
         const vars = Object.assign({}, tpl);
         delete vars.evaluate; delete vars._src;
@@ -337,7 +346,10 @@ function createGas(options) {
   };
 
   const context = vm.createContext(ctx);
-  const code = GS_ORDER.map((f) => '// ---- ' + f + '\n' + fs.readFileSync(path.join(SRC, f), 'utf8')).join('\n');
+  // options.bundle: load the 2-file all-in-one build (dist/) instead of src/*.gs
+  const code = options.bundle
+    ? BUNDLE_FILES.map((f) => fs.readFileSync(path.join(DIST, f), 'utf8')).join('\n')
+    : GS_ORDER.map((f) => '// ---- ' + f + '\n' + fs.readFileSync(path.join(SRC, f), 'utf8')).join('\n');
   vm.runInContext(code, context, { filename: 'project.gs' });
 
   const gas = {

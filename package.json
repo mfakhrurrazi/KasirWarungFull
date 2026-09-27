@@ -7,6 +7,7 @@
     "test": "TZ=Asia/Jakarta node --test tests/server.test.js",
     "test:ui": "TZ=Asia/Jakarta node tests/ui.e2e.js",
     "build:template": "python3 tools/build_template.py",
+    "build:bundle": "node tools/build_bundle.js",
     "license": "node tools/generate-license.js"
   },
   "devDependencies": {

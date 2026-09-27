@@ -51,7 +51,7 @@ const PERMS = {
 function doGet(e) {
   const requested = e && e.parameter && e.parameter.page ? String(e.parameter.page).toLowerCase() : '';
   const page = PAGES.indexOf(requested) >= 0 ? requested : '';
-  const tpl = HtmlService.createTemplateFromFile('Index');
+  const tpl = HtmlService.createTemplate(htmlSource_('Index'));
   const boot = bootInfo_();
   boot.page = page;
   boot.appUrl = ScriptApp.getService().getUrl();
@@ -64,7 +64,19 @@ function doGet(e) {
 
 /** Server-side include for HTML partials: <?!= include('Page_Kasir'); ?> */
 function include(filename) {
-  return HtmlService.createHtmlOutputFromFile(String(filename)).getContent();
+  return htmlSource_(String(filename));
+}
+
+/**
+ * HTML source of a page/partial. In the 2-file "all-in-one" install
+ * (dist/KasirWarung_2_Tampilan.gs) the pages live in KW_BUNDLED_HTML;
+ * in the normal 24-file install they are real HTML files.
+ */
+function htmlSource_(name) {
+  if (typeof KW_BUNDLED_HTML !== 'undefined' && Object.prototype.hasOwnProperty.call(KW_BUNDLED_HTML, name)) {
+    return KW_BUNDLED_HTML[name];
+  }
+  return HtmlService.createHtmlOutputFromFile(name).getContent();
 }
 
 function safeJsonForHtml_(obj) {

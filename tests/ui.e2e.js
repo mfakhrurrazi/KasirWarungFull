@@ -26,7 +26,7 @@ const SHIM = `
 })();`;
 
 async function main() {
-  const gas = createGas();
+  const gas = createGas({ bundle: !!process.env.KW_BUNDLE }); // KW_BUNDLE=1 tests the 2-file all-in-one build
   gas.call('setupDatabase');
   const errors = [];
   global.__uiErrors = errors;
