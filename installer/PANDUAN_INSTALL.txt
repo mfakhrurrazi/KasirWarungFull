@@ -18,7 +18,10 @@ LANGKAH 2 — Buat project Apps Script di folder ini
 
 LANGKAH 3 — Tempel installer
   1. Buka file "Installer.gs" di folder ini → salin SEMUA isinya → tempel menggantikan isi Code.gs di editor.
-  2. Buka file "Installer_appsscript.json" → salin semua isinya → tempel menggantikan isi appsscript.json di editor.
+  2. WAJIB: klik file "appsscript.json" di daftar file editor (kiri) → hapus SEMUA isinya →
+     tempel isi file "Installer_appsscript.json" dari folder ini.
+     (Kalau appsscript.json tidak terlihat: ulangi Langkah 2 nomor 3.)
+     Tanpa ini install() gagal dengan error "insufficient authentication scopes".
   3. Tekan Ctrl+S (simpan).
 
 
@@ -65,7 +68,9 @@ MEMPERBARUI VERSI
 
 
 JIKA install() GAGAL
-  • "HTTP 403 ... Apps Script API" → Langkah 1 belum aktif, atau tunggu 2 menit lalu Run lagi.
+  • "insufficient authentication scopes" / "Izin script.projects belum ada" → appsscript.json belum diganti
+    (Langkah 3 nomor 2). Ganti, simpan, Run install lagi, lalu Allow izin baru.
+  • "Apps Script API ... usersettings" → Langkah 1 belum aktif, atau tunggu 2 menit lalu Run lagi.
   • "Gagal mengunduh" → periksa koneksi internet, lalu Run lagi.
   • Cara manual: folder "Source Code" berisi 24 file. Buat file dengan nama yang SAMA di editor
     (Script: Code, Data, Setup, Reports, AI, TemplateData — HTML: Index, Styles, Scripts, Page_…),
