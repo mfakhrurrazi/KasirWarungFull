@@ -2,3 +2,4 @@ node_modules/
 tests/screenshots/
 .clasp.json
 .DS_Store
+__pycache__/
