@@ -69,6 +69,14 @@ LANGKAH 8 — Mulai jualan
   4. Pengaturan → Data & Backup → aktifkan "Backup otomatis".
 
 
+LANGKAH 9 — (Opsional) Bot WhatsApp: CS grup & pesanan via WA (gratis)
+  1. Pengaturan → Bot WhatsApp → "Buat kode rahasia bot" → salin 3 baris .env yang muncul.
+  2. Siapkan perangkat yang menyala terus (HP Android bekas + Termux, PC, atau VPS) dan nomor WA khusus warung.
+  3. Ikuti file README.md di folder "Bot WhatsApp (wa-bot)": npm install → isi .env → npm start →
+     masukkan KODE PAIRING di WhatsApp (Perangkat tertaut → Tautkan dengan nomor telepon saja).
+  4. Masukkan nomor bot ke grup pelanggan. Pesanan masuk ke menu "Pesanan WA".
+
+
 MEMPERBARUI VERSI
   Ganti isi Code.gs dan Tampilan dengan file versi baru → Ctrl+S →
   Deploy → Manage deployments → ✎ Edit → Version: New version → Deploy. URL tetap sama.

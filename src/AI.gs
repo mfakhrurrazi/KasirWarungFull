@@ -16,7 +16,8 @@ const AI_FEATURE = {
   KULAKAN: 'Saran Kulakan',
   TAGIH: 'Pesan Tagih Halus',
   OMZET: 'Cerita Omzet Hari Ini',
-  TEST: 'Tes Koneksi AI'
+  TEST: 'Tes Koneksi AI',
+  CS: 'CS WhatsApp'
 };
 
 // callAI() is a top-level function (as specified) and therefore visible to

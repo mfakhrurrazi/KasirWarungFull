@@ -48,7 +48,7 @@
 </section>
 <script>
 Pages.kasir = {
-  products: [], byId: {}, byBarcode: {}, cart: [], customer: null, cat: 'Semua', limit: 60, lastSale: null,
+  products: [], byId: {}, byBarcode: {}, cart: [], customer: null, waOrder: null, cat: 'Semua', limit: 60, lastSale: null,
 
   init() {
     const search = $('#posSearch');
@@ -82,12 +82,13 @@ Pages.kasir = {
     });
     $('#cartCustomer').addEventListener('click', (e) => {
       if (e.target.closest('[data-clear-cust]')) { this.customer = null; this.save(); this.renderCart(); return; }
+      if (e.target.closest('[data-clear-wa]')) { this.waOrder = null; this.save(); this.renderCart(); return; }
       if (e.target.closest('[data-pick-cust]')) this.pickCustomer().then((c) => { if (c) { this.customer = c; this.save(); this.renderCart(); } });
     });
     $('#cartClear').addEventListener('click', async () => {
       if (!this.cart.length) return;
       if (await confirmBox({ title: 'Kosongkan keranjang?', message: 'Semua barang di keranjang akan dihapus.', okText: 'Kosongkan', danger: true })) {
-        this.cart = []; this.customer = null; this.save(); this.renderCart(); this.renderGrid();
+        this.cart = []; this.customer = null; this.waOrder = null; this.save(); this.renderCart(); this.renderGrid();
       }
     });
     $('#cartPay').addEventListener('click', () => this.openPay());
@@ -105,7 +106,7 @@ Pages.kasir = {
 
   async enter() {
     const saved = Store.get('cart', null);
-    if (saved && Array.isArray(saved.items) && !this.cart.length) { this.cart = saved.items; this.customer = saved.customer || null; }
+    if (saved && Array.isArray(saved.items) && (!this.cart.length || saved.waOrder)) { this.cart = saved.items; this.customer = saved.customer || null; this.waOrder = saved.waOrder || null; }
     await this.loadProducts(false);
     if (window.innerWidth >= 768) setTimeout(() => $('#posSearch').focus(), 100);
   },
@@ -133,7 +134,7 @@ Pages.kasir = {
     this.renderCats(); this.renderGrid(); this.renderCart();
   },
 
-  save() { Store.set('cart', { items: this.cart, customer: this.customer }); },
+  save() { Store.set('cart', { items: this.cart, customer: this.customer, waOrder: this.waOrder }); },
 
   renderCats() {
     const cats = ['Semua'].concat((App.boot.categories || ['Sembako', 'Minuman', 'Rokok', 'Snack', 'Toiletries', 'Gas & Air', 'Lainnya']));
@@ -251,9 +252,11 @@ Pages.kasir = {
 
   renderCart(bumpId) {
     const t = this.totals(0);
-    $('#cartCustomer').innerHTML = this.customer
+    $('#cartCustomer').innerHTML = (this.waOrder
+      ? '<div class="notice n-ok" style="align-items:center">' + icon('wa') + '<div style="flex:1"><b>Pesanan WA ' + esc(this.waOrder.order_id) + '</b><div class="small">' + esc(this.waOrder.name) + ' · selesai otomatis saat dibayar</div></div><button class="btn btn-sm btn-ghost" data-clear-wa>Lepas</button></div>'
+      : '') + (this.customer
       ? '<div class="notice n-info" style="align-items:center">' + icon('user') + '<div style="flex:1"><b>' + esc(this.customer.name) + '</b><div class="small">Sisa kasbon ' + esc(rp(this.customer.outstanding || 0)) + '</div></div><button class="btn btn-sm btn-ghost" data-clear-cust>Hapus</button></div>'
-      : '<button class="btn btn-sm btn-ghost" data-pick-cust>' + icon('user') + 'Pilih pelanggan (opsional)</button>';
+      : '<button class="btn btn-sm btn-ghost" data-pick-cust>' + icon('user') + 'Pilih pelanggan (opsional)</button>');
     if (!this.cart.length) {
       $('#cartList').innerHTML = '<li>' + emptyState('cart', 'Keranjang kosong', 'Ketuk barang atau scan barcode untuk menambah.') + '</li>';
     } else {
@@ -412,7 +415,8 @@ Pages.kasir = {
     const payload = {
       items: this.cart.map((c) => ({ product_id: c.product_id, qty: c.qty })),
       method: method, discount: t.discount, paid: paid,
-      customer_id: this.customer ? this.customer.customer_id : ''
+      customer_id: this.customer ? this.customer.customer_id : '',
+      wa_order_id: this.waOrder ? this.waOrder.order_id : ''
     };
     const btn = $('#payDo', modal.el);
     btn.disabled = true;
@@ -422,8 +426,10 @@ Pages.kasir = {
       sale.items.forEach((i) => { const p = this.byId[i.product_id]; if (p) p.stock = Math.round((p.stock - i.qty) * 100) / 100; });
       if (method === 'Kasbon') App.customers = null;
       this.lastSale = sale;
-      this.cart = []; this.customer = null; this.save();
+      this.cart = []; this.customer = null; this.waOrder = null; this.save();
       this.toggleCart(false);
+      if (sale.waOrder && sale.waOrder.changed) toast('Pesanan WA selesai' + (sale.waOrder.notified ? ' · pelanggan dikabari' : ''), 'ok');
+      else if (sale.waOrderError) toast('Transaksi tersimpan, tapi pesanan WA: ' + sale.waOrderError, 'err');
       this.renderCart(); this.renderGrid();
       this.showSuccess(sale);
     } catch (e) {

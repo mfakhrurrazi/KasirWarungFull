@@ -602,3 +602,136 @@ test('manual edits in the sheet show up in the app (edit trigger + fresh reload)
   ok(gas.api('apiCheckout', t, { items: [{ product_id: p.product_id, qty: 1 }], method: 'Tunai', paid: 1000000 }));
   assert.equal(ok(gas.api('apiProducts', t)).find((x) => x.product_id === p.product_id).stock, 24);
 });
+
+test('WhatsApp bot: secret, commands, orders, kasbon privacy, notifications and checkout link', () => {
+  const gas = boot();
+  const t = login(gas);
+  // no secret yet → rejected; kasir cannot create one
+  assert.match(gas.post({ kw: 'wa', action: 'poll' }).error, /WA_BOT_SECRET/);
+  ok(gas.api('apiSaveUser', t, { username: 'kasir9', full_name: 'Kasir Sembilan', role: 'Kasir', password: 'kasir9pw', active: true }));
+  const tk = login(gas, 'kasir9', 'kasir9pw');
+  assert.equal(gas.api('apiWaNewSecret', tk).code, 'FORBIDDEN');
+  const { secret, url } = ok(gas.api('apiWaNewSecret', t));
+  assert.match(secret, /^[a-f0-9]{64}$/);
+  assert.match(url, /\/exec$/);
+  assert.match(gas.post({ kw: 'wa', secret: 'x' + secret.slice(1), action: 'poll' }).error, /salah/);
+  assert.match(gas.post({ secret, action: 'poll' }).error, /tidak dikenal/);
+
+  let seq = 0;
+  const say = (text, o) => {
+    if (!(o && o.keepRate)) for (const k of gas.state.cache.keys()) if (k.startsWith('wa_rate_')) gas.state.cache.delete(k);
+    const r = gas.post(Object.assign({ kw: 'wa', secret, action: 'message', chat: '6281234567801@s.whatsapp.net', isGroup: false,
+      sender: '6281234567801', name: 'Siti', text, id: 'M' + (++seq) }, o || {}));
+    assert.equal(r.ok, true, r.error);
+    return r;
+  };
+  const GROUP = { chat: '120363000000001@g.us', chatName: 'Pelanggan Warung', isGroup: true };
+
+  // heartbeat stores bot status + groups for the settings page
+  assert.equal(gas.post({ kw: 'wa', secret, action: 'hello', me: '6281111111111', groups: [{ id: GROUP.chat, name: 'Pelanggan Warung' }] }).ok, true);
+  const cfg0 = ok(gas.api('apiWaGetConfig', t));
+  assert.equal(cfg0.status.online, true);
+  assert.equal(cfg0.status.groups[0].name, 'Pelanggan Warung');
+  assert.equal(cfg0.hasSecret, true);
+  assert.equal(JSON.stringify(cfg0).indexOf(secret), -1, 'secret never re-sent to the browser');
+
+  assert.match(say('menu').replies[0], /Warung Berkah Jaya/);
+  assert.match(say('Halo kak').replies[0], /harga <barang>/);
+  // group: ordinary chatter ignored, commands answered
+  assert.deepEqual(say('halo semua, besok arisan ya', GROUP).replies, []);
+  const h = say('harga indomie', GROUP).replies[0];
+  assert.match(h, /Indomie Goreng 85 g\* — Rp 3\.500\/pcs/);
+  assert.match(h, /Tersedia/);
+  assert.match(say('ada gas 3kg?', GROUP).replies[0], /Gas LPG 3 kg/);
+  assert.match(say('harga sapu lidi').replies[0], /belum ketemu/);
+
+  // order: qty formats, tier price, per-kg quantity, unknown item, customer matched by phone
+  const r = say('pesan\n2 indomie goreng\n1x gas 3kg\nberas 5kg\nsapu lidi 3').replies[0];
+  const id = (r.match(/PSN\d{6}-\d{3}/) || [])[0];
+  assert.ok(id, r);
+  assert.match(r, /Belum ketemu: sapu lidi 3/);
+  const order = gas.rows('WaOrders').pop();
+  assert.equal(order.order_id, id);
+  assert.equal(order.status, 'Baru');
+  assert.equal(order.customer_id, 'PLG260828-001');
+  const items = JSON.parse(order.items_json);
+  assert.deepEqual(items.map((i) => [i.name, i.qty]), [['Indomie Goreng 85 g', 2], ['Gas LPG 3 kg (Isi Ulang)', 1], ['Beras Medium Curah', 5]]);
+  assert.equal(items[2].price, 13200, 'bundle price for 5 kg');
+  assert.equal(order.total, 7000 + 22000 + 66000);
+  assert.match(r, /Rp 95\.000/);
+  // one-line order with commas / "dan"
+  assert.match(say('pesan 2 teh pucuk, 1 chitato dan 1 sabun lifebuoy').replies[0], /Teh Pucuk.*\n.*Chitato.*\n.*Lifebuoy/);
+
+  // status: only the orderer sees it
+  assert.match(say('status ' + id).replies[0], /Menunggu dicek kasir/);
+  assert.match(say('status ' + id, { sender: '6289999999999', chat: '6289999999999@s.whatsapp.net' }).replies[0], /tidak ditemukan/);
+
+  // kasbon: never in a group; private shows the balance of the sender only
+  assert.match(say('kasbon', GROUP).replies[0], /chat pribadi/);
+  const debtor = ok(gas.api('apiCustomers', t)).find((c) => c.outstanding > 0);
+  const kb = say('kasbon', { sender: debtor.phone, chat: debtor.phone + '@s.whatsapp.net' }).replies[0];
+  assert.match(kb, new RegExp('Sisa kasbon .*' + ok(gas.api('apiCustomers', t)).find((c) => c.customer_id === debtor.customer_id).outstanding.toLocaleString('id-ID').replace(/\./g, '\\.')));
+  assert.match(say('kasbon', { sender: '6289999999999', chat: '6289999999999@s.whatsapp.net' }).replies[0], /belum terdaftar/);
+
+  // group member hidden behind a LID: order still works, status checked by chat + name
+  const lid = say('pesan 1 indomie', Object.assign({ sender: '', name: 'Tono' }, GROUP)).replies[0];
+  const lidId = lid.match(/PSN\d{6}-\d{3}/)[0];
+  assert.match(lid, /kasir akan membalas di sini/);
+  assert.match(say('status ' + lidId, Object.assign({ sender: '', name: 'Tono' }, GROUP)).replies[0], /Menunggu/);
+
+  // duplicate delivery of the same message id is ignored
+  assert.equal(say('menu', { id: 'SAME' }).replies.length, 1);
+  assert.equal(say('menu', { id: 'SAME' }).replies.length, 0);
+
+  // kasir processes: customer notified through the outbox (private number, or the group for LID senders)
+  const orders = ok(gas.api('apiWaOrders', tk)).orders;
+  assert.equal(orders[0].order_id, lidId);
+  ok(gas.api('apiWaSetStatus', tk, id, 'Diproses'));
+  ok(gas.api('apiWaSetStatus', tk, lidId, 'Batal', 'Stok habis'));
+  let out = gas.post({ kw: 'wa', secret, action: 'poll' }).outbox;
+  assert.equal(out.length, 2);
+  assert.equal(out[0].to, '6281234567801');
+  assert.match(out[0].text, /sedang disiapkan/);
+  assert.equal(out[1].to, GROUP.chat);
+  assert.match(out[1].text, /dibatalkan: Stok habis/);
+  assert.equal(gas.post({ kw: 'wa', secret, action: 'poll' }).outbox.length, 0, 'outbox emptied');
+  assert.equal(gas.api('apiWaSetStatus', tk, lidId, 'Diproses').code, 'INVALID', 'cancelled order is final');
+
+  // checkout from the order closes it and sends the thank-you
+  const sale = ok(gas.api('apiCheckout', tk, { items: items.map((i) => ({ product_id: i.product_id, qty: i.qty })), method: 'Tunai', paid: 100000, discount: 0, customer_id: '', wa_order_id: id }));
+  assert.equal(sale.waOrder.changed, true);
+  const closed = gas.rows('WaOrders').find((o) => o.order_id === id);
+  assert.equal(closed.status, 'Selesai');
+  assert.equal(closed.trx_id, sale.trx_id);
+  out = gas.post({ kw: 'wa', secret, action: 'poll' }).outbox;
+  assert.match(out[0].text, new RegExp('selesai.*' + sale.trx_id));
+
+  // settings: group allowlist, features off, private chats off
+  ok(gas.api('apiWaSaveConfig', t, { groups: ['120363000000999@g.us'], order: false, stock: 'angka' }));
+  assert.deepEqual(say('harga indomie', GROUP).replies, []);
+  assert.match(say('harga indomie').replies[0], /Stok \d+ pcs/);
+  assert.match(say('pesan 1 indomie').replies[0], /belum diaktifkan/);
+  assert.equal(gas.api('apiWaSaveConfig', t, { groups: ['bukan-grup'] }).code, 'INVALID');
+  ok(gas.api('apiWaSaveConfig', t, { private: false }));
+  assert.deepEqual(say('menu').replies, []);
+  ok(gas.api('apiWaSaveConfig', t, { enabled: false }));
+  assert.deepEqual(say('menu', GROUP).replies, []);
+  ok(gas.api('apiWaSaveConfig', t, {}));
+
+  // free question: AI with product facts, or the menu when AI is not available
+  assert.match(say('warungnya buka sampai jam berapa ya').replies[0], /belum paham[\s\S]*harga <barang>/);
+  gas.state.props.set('AI_API_KEY', 'sk-test');
+  gas.state.props.set('AI_MODEL', 'test-model');
+  let prompt = '';
+  gas.state.fetchHandler = (u, o) => { prompt = JSON.parse(o.payload).messages[0].content; return { code: 200, body: { choices: [{ message: { content: 'Ada Kak, Teh Pucuk Rp 4.000 😊' } }] } }; };
+  assert.equal(say('teh pucuk dingin ada ga kak').replies[0], 'Ada Kak, Teh Pucuk Rp 4.000 😊');
+  assert.match(prompt, /Teh Pucuk Harum 350 ml \| Rp 4\.000\/pcs \| tersedia/);
+  assert.equal(gas.rows('Log_AI').pop().feature, 'CS WhatsApp');
+  assert.deepEqual(say('ada yang lihat kucing saya', GROUP).replies, [], 'group chatter never goes to AI');
+
+  // flood guard
+  const spam = [];
+  for (let i = 0; i < 10; i++) spam.push(say('menu', { sender: '6285555555555', chat: '6285555555555@s.whatsapp.net', keepRate: i > 0 }).replies.join());
+  assert.match(spam[8], /Pelan-pelan/);
+  assert.equal(spam[9], '');
+});

@@ -580,6 +580,7 @@ function loadDemoData_(user) {
 function resetData_(user, keepCatalog) {
   withLock_(function () {
     ['Sales', 'Credits', 'StockMoves', 'Customers', 'Log_AI'].forEach(clearData_);
+    if (db_().getSheetByName('WaOrders')) clearData_('WaOrders');
     if (!keepCatalog) clearData_('Products');
     else {
       const t = readTable_('Products');

@@ -8,6 +8,7 @@
   <div class="tabs" id="stTabs">
     <button data-tab="profil" class="on">Profil</button>
     <button data-tab="ai">AI</button>
+    <button data-tab="wa">Bot WhatsApp</button>
     <button data-tab="users">Pengguna</button>
     <button data-tab="data">Data &amp; Backup</button>
     <button data-tab="log">Log aktivitas</button>
@@ -43,6 +44,38 @@
         <li>Tambahkan <span class="kbd">AI_API_KEY</span>, <span class="kbd">AI_MODEL</span> dan (opsional) <span class="kbd">AI_BASE_URL</span>.</li>
         <li>Kunci tidak pernah disimpan di spreadsheet dan tidak pernah dikirim ke browser.</li>
       </ol>
+    </div>
+  </div>
+
+  <div data-panel="wa" hidden>
+    <div class="card">
+      <div class="card-head"><h2>Status bot</h2><button class="btn btn-sm" id="waReload"><i data-icon="refresh"></i>Cek</button></div>
+      <div id="waState"></div>
+      <div class="actions mt1"><button class="btn btn-yellow" id="waSecret"><i data-icon="key"></i>Buat kode rahasia bot</button></div>
+      <div id="waSecretOut" class="mt1"></div>
+    </div>
+    <div class="card mt2">
+      <h2>Yang boleh dikerjakan bot</h2>
+      <label class="switch"><span>Bot aktif<br><small class="muted">Bila mati, bot diam (tidak membalas apa pun).</small></span><input type="checkbox" id="waEnabled"></label>
+      <label class="switch"><span>Cek harga &amp; stok<br><small class="muted">"harga beras", "ada gas 3kg?"</small></span><input type="checkbox" id="waPrice"></label>
+      <label class="switch"><span>Terima pesanan<br><small class="muted">"pesan" + daftar belanja → masuk menu Pesanan WA</small></span><input type="checkbox" id="waOrder"></label>
+      <label class="switch"><span>Cek kasbon<br><small class="muted">Hanya di chat pribadi, hanya untuk nomor pelanggan itu sendiri</small></span><input type="checkbox" id="waKasbon"></label>
+      <label class="switch"><span>Jawab pertanyaan bebas dengan AI<br><small class="muted">Di chat pribadi, atau di grup bila bot di-mention. Tanpa AI: balas menu.</small></span><input type="checkbox" id="waAi"></label>
+      <label class="switch"><span>Kabari pelanggan saat status pesanan berubah</span><input type="checkbox" id="waNotify"></label>
+      <label class="switch"><span>Layani chat pribadi</span><input type="checkbox" id="waPrivate"></label>
+      <label class="field"><span>Tampilkan stok ke pelanggan</span><select id="waStock"><option value="status">Tersedia / Sisa sedikit / Habis</option><option value="angka">Jumlah stok (angka)</option><option value="sembunyi">Jangan tampilkan</option></select></label>
+      <div class="field"><span>Grup yang dilayani</span><div id="waGroups" class="small"></div><span class="hint">Tidak ada yang dicentang = semua grup tempat nomor bot bergabung.</span></div>
+      <button class="btn btn-primary" id="waSave"><i data-icon="check"></i>Simpan pengaturan bot</button>
+    </div>
+    <div class="card mt2">
+      <h3>Cara memasang bot (gratis, Baileys)</h3>
+      <ol class="small">
+        <li>Siapkan <b>nomor WhatsApp khusus warung</b> dan perangkat yang menyala terus: HP Android bekas (Termux), PC, atau VPS.</li>
+        <li>Tekan <b>Buat kode rahasia bot</b> di atas, salin isi <span class="kbd">.env</span> yang muncul.</li>
+        <li>Ikuti <b>wa-bot/README.md</b> (folder Source Code): <span class="kbd">npm install</span> → tempel .env → <span class="kbd">npm start</span> → masukkan kode pairing di WhatsApp (Perangkat tertaut).</li>
+        <li>Masukkan nomor bot ke grup pelanggan. Status di atas berubah menjadi <b>Aktif</b>.</li>
+      </ol>
+      <p class="small muted">Baileys tidak resmi dari WhatsApp. Pakai nomor khusus, jangan kirim pesan massal/promosi — bot hanya membalas & mengabari pemesan.</p>
     </div>
   </div>
 
@@ -98,6 +131,9 @@ Pages.pengaturan = {
     $('#dmLoad').addEventListener('click', () => this.loadDemo());
     $('#dmReset').addEventListener('click', () => this.reset());
     $('#lgReload').addEventListener('click', () => this.logs());
+    $('#waReload').addEventListener('click', () => this.loadWa());
+    $('#waSave').addEventListener('click', () => this.saveWa());
+    $('#waSecret').addEventListener('click', () => this.newWaSecret());
   },
   async enter() {
     this.showTab(this.tab);
@@ -125,6 +161,7 @@ Pages.pengaturan = {
     $$('#page-pengaturan [data-panel]').forEach((p) => { p.hidden = p.getAttribute('data-panel') !== t; });
     if (t === 'users') this.loadUsers();
     if (t === 'log') this.logs();
+    if (t === 'wa') this.loadWa();
   },
   applySettings(s) {
     App.settings = Object.assign({}, App.settings, s);
@@ -156,6 +193,50 @@ Pages.pengaturan = {
       this.applySettings(s);
       toast('AI ' + (s.AI_ENABLED ? 'diaktifkan' : 'dimatikan'), 'ok');
     } catch (e) { $('#aiToggle').checked = !$('#aiToggle').checked; }
+  },
+  async loadWa() {
+    $('#waState').innerHTML = skeleton(2);
+    try {
+      const d = await api('apiWaGetConfig');
+      this.wa = d;
+      const c = d.config, st = d.status;
+      $('#waState').innerHTML = '<ul class="list">' +
+        '<li><div class="li-main">Koneksi bot</div>' + (st.online ? '<span class="badge b-green">Aktif</span>' : (st.lastSeen ? '<span class="badge b-red">Terputus sejak ' + esc(fmtDateTime(st.lastSeen)) + '</span>' : '<span class="badge b-gray">Belum pernah tersambung</span>')) + '</li>' +
+        '<li><div class="li-main">Nomor bot</div><span class="small">' + esc(st.me ? phoneLocal(st.me) : '-') + '</span></li>' +
+        '<li><div class="li-main">Kode rahasia</div>' + (d.hasSecret ? '<span class="badge b-green">Sudah dibuat</span>' : '<span class="badge b-red">Belum dibuat</span>') + '</li>' +
+        '</ul><p class="small muted mb0">Alamat web app (APPS_SCRIPT_URL):<br><span style="word-break:break-all;color:var(--ink)">' + esc(d.url || '-') + '</span></p>';
+      $('#waSecret').innerHTML = icon('key') + (d.hasSecret ? 'Buat ulang kode rahasia' : 'Buat kode rahasia bot');
+      $('#waEnabled').checked = c.enabled; $('#waPrice').checked = c.price; $('#waOrder').checked = c.order; $('#waKasbon').checked = c.kasbon;
+      $('#waAi').checked = c.ai; $('#waNotify').checked = c.notify; $('#waPrivate').checked = c.private; $('#waStock').value = c.stock;
+      const groups = (st.groups || []).slice();
+      c.groups.forEach((id) => { if (!groups.some((g) => g.id === id)) groups.push({ id: id, name: '(grup tidak terlihat bot)' }); });
+      $('#waGroups').innerHTML = groups.length
+        ? groups.map((g) => '<label class="switch"><span>' + esc(g.name || g.id) + '<br><small class="muted">' + esc(g.id) + '</small></span><input type="checkbox" data-wa-group="' + esc(g.id) + '"' + (c.groups.indexOf(g.id) >= 0 ? ' checked' : '') + '></label>').join('')
+        : '<p class="muted">Daftar grup muncul setelah bot tersambung.</p>';
+    } catch (e) { $('#waState').innerHTML = '<div class="notice n-err">' + esc(e.message) + '</div>'; }
+  },
+  async saveWa() {
+    const payload = {
+      enabled: $('#waEnabled').checked, price: $('#waPrice').checked, order: $('#waOrder').checked, kasbon: $('#waKasbon').checked,
+      ai: $('#waAi').checked, notify: $('#waNotify').checked, private: $('#waPrivate').checked, stock: $('#waStock').value,
+      groups: $$('[data-wa-group]').filter((x) => x.checked).map((x) => x.getAttribute('data-wa-group'))
+    };
+    try {
+      await withBusy('Menyimpan…', () => api('apiWaSaveConfig', payload));
+      toast('Pengaturan bot WhatsApp tersimpan', 'ok');
+    } catch (e) { /* toast */ }
+  },
+  async newWaSecret() {
+    if (this.wa && this.wa.hasSecret && !(await confirmBox({ title: 'Buat ulang kode rahasia?', message: 'Bot yang sedang berjalan akan berhenti tersambung sampai file .env-nya diganti dengan kode baru.', okText: 'Buat ulang', danger: true }))) return;
+    try {
+      const r = await withBusy('Membuat kode…', () => api('apiWaNewSecret'));
+      const env = 'APPS_SCRIPT_URL=' + r.url + '\nBOT_SECRET=' + r.secret + '\nPAIRING_NUMBER=62xxxxxxxxxx';
+      $('#waSecretOut').innerHTML = '<div class="notice n-warn">' + icon('shield') + '<span>Kode ini hanya ditampilkan <b>sekali</b>. Salin sekarang ke file <b>wa-bot/.env</b> dan jangan dibagikan. Ganti PAIRING_NUMBER dengan nomor WhatsApp bot.</span></div>' +
+        '<textarea id="waEnv" rows="3" readonly style="font-family:monospace">' + esc(env) + '</textarea>' +
+        '<button class="btn btn-sm mt1" id="waCopy">' + icon('file') + 'Salin</button>';
+      $('#waCopy').addEventListener('click', () => { const ta = $('#waEnv'); ta.select(); try { navigator.clipboard.writeText(ta.value); } catch (e) { document.execCommand('copy'); } toast('Disalin', 'ok'); });
+      this.loadWa();
+    } catch (e) { /* toast */ }
   },
   async testAi() {
     $('#aiTestOut').innerHTML = '<div class="notice n-info"><span class="spinner sm"></span><span>Menghubungi server AI…</span></div>';

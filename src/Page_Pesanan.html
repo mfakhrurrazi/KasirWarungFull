@@ -1,0 +1,147 @@
+<section class="page" id="page-pesanan" hidden>
+  <div class="page-head">
+    <div>
+      <h1>Pesanan WhatsApp</h1>
+      <p class="sub">Pesanan yang masuk lewat bot WhatsApp (grup &amp; chat pribadi). Proses di Kasir, pelanggan otomatis dikabari.</p>
+    </div>
+    <div class="actions">
+      <button class="btn" id="poReload"><i data-icon="refresh"></i>Muat ulang</button>
+    </div>
+  </div>
+
+  <div id="poBot" class="mb0"></div>
+  <div class="tabs mt1" id="poTabs">
+    <button data-tab="Baru" class="on">Baru</button>
+    <button data-tab="Diproses">Diproses</button>
+    <button data-tab="Selesai">Selesai</button>
+    <button data-tab="Batal">Batal</button>
+    <button data-tab="Semua">Semua</button>
+  </div>
+  <div class="search mb0"><i data-icon="search"></i><input id="poSearch" type="search" placeholder="Cari nama, nomor HP, no. pesanan atau barang…" autocomplete="off"></div>
+  <div class="grid g3 mt2" id="poList"></div>
+</section>
+<script>
+Pages.pesanan = {
+  list: [], bot: null, tab: 'Baru', timer: null,
+  init() {
+    $('#poTabs').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-tab]');
+      if (!b) return;
+      this.tab = b.getAttribute('data-tab');
+      this.render();
+    });
+    $('#poSearch').addEventListener('input', debounce(() => this.render(), 100));
+    $('#poReload').addEventListener('click', () => this.load(true));
+    $('#poList').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-po]');
+      if (!b) return;
+      const o = this.list.find((x) => x.order_id === b.getAttribute('data-id'));
+      if (!o) return;
+      const a = b.getAttribute('data-po');
+      if (a === 'kasir') this.toKasir(o);
+      else if (a === 'proses') this.setStatus(o, 'Diproses');
+      else if (a === 'batal') this.cancel(o);
+      else if (a === 'wa') openWa(o.phone, 'Halo ' + o.customer_name + ', terkait pesanan ' + o.order_id + ' di ' + (App.settings.BUSINESS_NAME || 'warung kami') + ': ');
+    });
+  },
+  async enter() {
+    if (!this.list.length) $('#poList').innerHTML = [1, 2, 3].map(() => '<div class="card">' + skeleton(4) + '</div>').join('');
+    await this.load();
+    clearInterval(this.timer);
+    // Light auto-refresh while the page is open (new orders keep coming in).
+    this.timer = setInterval(() => {
+      if (App.page !== 'pesanan') { clearInterval(this.timer); return; }
+      if (!document.hidden && !$('#modalRoot').children.length) this.load(false, true);
+    }, 30000);
+  },
+  async load(manual, silent) {
+    try {
+      const before = this.list.filter((o) => o.status === 'Baru').length;
+      const d = await api('apiWaOrders');
+      this.list = d.orders || [];
+      this.bot = d.bot || null;
+      const now = this.list.filter((o) => o.status === 'Baru').length;
+      if (silent && now > before) toast(now - before + ' pesanan WA baru masuk', 'ok');
+      if (manual) toast('Pesanan diperbarui', 'ok');
+      this.render();
+    } catch (e) { if (!silent) $('#poList').innerHTML = '<div class="notice n-err">' + esc(e.message) + '</div>'; }
+  },
+  badge(s) {
+    const cls = { Baru: 'b-yellow', Diproses: 'b-orange', Selesai: 'b-green', Batal: 'b-red' }[s] || '';
+    return '<span class="badge ' + cls + '">' + esc(s) + '</span>';
+  },
+  render() {
+    const b = this.bot;
+    $('#poBot').innerHTML = !b || !b.lastSeen
+      ? '<div class="notice n-info">' + icon('wa') + '<span>Bot WhatsApp belum pernah tersambung.' + (App.can('settings') ? ' Atur di <b>Pengaturan → Bot WhatsApp</b>.' : ' Minta pemilik warung mengaturnya.') + '</span></div>'
+      : (b.online
+        ? '<div class="notice n-ok">' + icon('check') + '<span>Bot WhatsApp aktif' + (b.me ? ' (' + esc(phoneLocal(b.me)) + ')' : '') + '. Pesanan baru muncul otomatis.</span></div>'
+        : '<div class="notice n-warn">' + icon('alert') + '<span>Bot WhatsApp tidak aktif sejak ' + esc(fmtDateTime(b.lastSeen)) + '. Periksa HP/server tempat bot berjalan.</span></div>');
+
+    const count = (s) => this.list.filter((o) => s === 'Semua' || o.status === s).length;
+    $$('#poTabs button').forEach((x) => {
+      const s = x.getAttribute('data-tab');
+      x.classList.toggle('on', s === this.tab);
+      x.textContent = s + (s === 'Baru' || s === 'Diproses' ? ' (' + count(s) + ')' : '');
+    });
+    const q = $('#poSearch').value.trim().toLowerCase();
+    const rows = this.list.filter((o) => (this.tab === 'Semua' || o.status === this.tab) &&
+      (!q || (o.order_id + ' ' + o.customer_name + ' ' + o.phone + ' ' + o.chat_name + ' ' + o.items.map((i) => i.name).join(' ')).toLowerCase().indexOf(q) >= 0));
+    if (!rows.length) {
+      $('#poList').innerHTML = '<div class="card" style="grid-column:1/-1">' + (q
+        ? emptyState('box', 'Pesanan tidak ditemukan', 'Coba kata lain.')
+        : emptyState('cart', this.tab === 'Baru' ? 'Belum ada pesanan baru' : 'Belum ada pesanan', 'Pelanggan cukup kirim "pesan" + daftar belanja ke nomor/grup WhatsApp warung.')) + '</div>';
+      return;
+    }
+    $('#poList').innerHTML = rows.map((o) => {
+      const open = o.status === 'Baru' || o.status === 'Diproses';
+      const warn = o.note.split(' | ').filter((n) => /^(Belum ketemu|Stok kurang|Alasan batal)/.test(n));
+      return '<div class="card cust-card">' +
+        '<div class="cust-top"><span class="avatar" style="background:' + avatarColor(o.customer_name) + '">' + esc(initials(o.customer_name)) + '</span>' +
+        '<div style="flex:1;min-width:0"><div style="font-weight:900" class="nowrap">' + esc(o.customer_name) + '</div>' +
+        '<div class="small muted">' + esc(o.phone ? phoneLocal(o.phone) : 'Nomor tersembunyi') + ' · ' + esc(o.chat_name) + '</div></div>' + this.badge(o.status) + '</div>' +
+        '<div class="small muted">' + esc(o.order_id) + ' · ' + esc(fmtDateTime(o.datetime)) + (o.handled_by ? ' · ' + esc(o.handled_by) : '') + '</div>' +
+        '<ul class="list small">' + o.items.map((i) => '<li><div class="li-main">' + esc(i.name) + ' × ' + esc(fmtNum(i.qty)) + '</div><span class="num">' + esc(rp(i.subtotal)) + '</span></li>').join('') + '</ul>' +
+        '<div style="display:flex;justify-content:space-between;align-items:baseline"><span class="muted small">' + (o.trx_id ? 'Transaksi ' + esc(o.trx_id) : 'Perkiraan total') + '</span><span class="num" style="font-size:1.2rem;font-weight:900">' + esc(rp(o.total)) + '</span></div>' +
+        warn.map((w) => '<div class="notice n-warn small">' + icon('alert') + '<span>' + esc(w) + '</span></div>').join('') +
+        '<div class="actions">' +
+        (open ? '<button class="btn btn-sm btn-primary" data-po="kasir" data-id="' + esc(o.order_id) + '">' + icon('cart') + 'Proses di Kasir</button>' : '') +
+        (o.status === 'Baru' ? '<button class="btn btn-sm" data-po="proses" data-id="' + esc(o.order_id) + '">Tandai disiapkan</button>' : '') +
+        (o.phone ? '<button class="btn btn-sm btn-wa" data-po="wa" data-id="' + esc(o.order_id) + '">' + icon('wa') + 'Chat</button>' : '') +
+        (open ? '<button class="btn btn-sm btn-ghost" data-po="batal" data-id="' + esc(o.order_id) + '">Batalkan</button>' : '') +
+        '</div></div>';
+    }).join('');
+  },
+  async setStatus(o, status, reason) {
+    try {
+      const r = await withBusy('Menyimpan…', () => api('apiWaSetStatus', o.order_id, status, reason || ''));
+      if (r.order) Object.assign(o, r.order);
+      toast('Pesanan ' + o.order_id + ' → ' + status + (r.notified ? ' · pelanggan dikabari lewat WA' : ''), 'ok');
+      this.render();
+      return true;
+    } catch (e) { return false; }
+  },
+  async cancel(o) {
+    const reason = await confirmBox({ title: 'Batalkan pesanan', message: 'Batalkan pesanan ' + o.order_id + ' dari ' + o.customer_name + '?', danger: true,
+      okText: 'Ya, batalkan', input: { label: 'Alasan (dikirim ke pelanggan)', placeholder: 'mis. stok habis' } });
+    if (!reason) return;
+    this.setStatus(o, 'Batal', reason === true ? '' : reason);
+  },
+  /** Loads the order into the Kasir cart; paying there closes the order and thanks the customer. */
+  async toKasir(o) {
+    const K = Pages.kasir;
+    if (K.cart.length && !(await confirmBox({ title: 'Ganti isi keranjang?', message: 'Keranjang Kasir masih berisi barang. Ganti dengan pesanan ' + o.order_id + '?' }))) return;
+    if (o.status === 'Baru' && !(await this.setStatus(o, 'Diproses'))) return;
+    let customer = null;
+    if (o.customer_id) {
+      try { customer = (await App.loadCustomers(false)).find((c) => c.customer_id === o.customer_id) || null; } catch (e) { customer = null; }
+    }
+    K.cart = o.items.map((i) => ({ product_id: i.product_id, qty: i.qty }));
+    K.customer = customer;
+    K.waOrder = { order_id: o.order_id, name: o.customer_name };
+    K.save();
+    App.go('kasir');
+    toast('Pesanan ' + o.order_id + ' dimuat ke keranjang. Cek stok & jumlah, lalu bayar.', 'ok');
+  }
+};
+</script>

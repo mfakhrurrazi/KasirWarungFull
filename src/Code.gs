@@ -19,7 +19,7 @@ const APP = {
   TRIAL_DAYS: 30
 };
 
-const PAGES = ['login', 'setup', 'dashboard', 'kasir', 'produk', 'stok', 'pelanggan', 'laporan',
+const PAGES = ['login', 'setup', 'dashboard', 'kasir', 'pesanan', 'produk', 'stok', 'pelanggan', 'laporan',
   'pengaturan', 'panduan', 'lisensi', 'tentang', 'syarat', 'privasi'];
 
 /** Permission → roles allowed. Owner = everything, Kasir = sales, customers, view stock. */
@@ -41,6 +41,7 @@ const PERMS = {
   'users': ['Owner'],
   'ai.owner': ['Owner'],
   'ai.reminder': ['Owner', 'Kasir'],
+  'wa.order': ['Owner', 'Kasir'],
   'license.edit': ['Owner']
 };
 
@@ -60,6 +61,23 @@ function doGet(e) {
     .setTitle(APP.NAME + ' — ' + (boot.business.name || 'Kasir Warung'))
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.DEFAULT);
+}
+
+/**
+ * Webhook for the WhatsApp bot (wa-bot/). Anonymous POST, authenticated by
+ * the shared secret inside the body — see WhatsApp.gs.
+ */
+function doPost(e) {
+  let body = {};
+  try { body = JSON.parse((e && e.postData && e.postData.contents) || '{}') || {}; } catch (err) { body = {}; }
+  let out;
+  try {
+    out = body.kw === 'wa' ? waWebhook_(body) : { ok: false, error: 'Permintaan tidak dikenal.' };
+  } catch (err) {
+    console.error((err && err.stack) || err);
+    out = { ok: false, error: 'Server error: ' + ((err && err.message) || err) };
+  }
+  return ContentService.createTextOutput(JSON.stringify(out, jsonReplacer_)).setMimeType(ContentService.MimeType.JSON);
 }
 
 /** Server-side include for HTML partials: <?!= include('Page_Kasir'); ?> */
@@ -787,6 +805,11 @@ function checkout_(s, p) {
   invalidateProducts_();
   logActivity_(s.username, 'PENJUALAN', result.trx_id, result.total, { method: method, items: result.items.length });
   result.business = receiptHeader_(settings);
+  if (p.wa_order_id) {
+    // Sale made from a WhatsApp order: close the order and tell the customer.
+    try { result.waOrder = waSetStatus_(s, p.wa_order_id, 'Selesai', { trx_id: result.trx_id, total: result.total }); }
+    catch (e) { result.waOrderError = e.message; }
+  }
   return result;
 }
 

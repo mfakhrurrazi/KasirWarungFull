@@ -482,6 +482,7 @@ const PAGE_META = {
   setup: { title: 'Setup Wizard', perm: 'settings' },
   dashboard: { title: 'Beranda', perm: 'dashboard', icon: 'home', nav: 1 },
   kasir: { title: 'Kasir', perm: 'pos.sell', icon: 'cart', nav: 1 },
+  pesanan: { title: 'Pesanan WA', short: 'Pesanan', perm: 'wa.order', icon: 'wa', nav: 1 },
   pelanggan: { title: 'Pelanggan & Kasbon', short: 'Kasbon', perm: 'customer.view', icon: 'book', nav: 1 },
   produk: { title: 'Produk', perm: 'product.view', icon: 'box', nav: 1 },
   stok: { title: 'Stok Masuk', perm: 'stock.in', icon: 'truck', nav: 1 },
@@ -691,7 +692,7 @@ const App = {
       pages.filter((p) => PAGE_META[p].nav === 2).map(item).join('') +
       '<div class="nav-cta"><b>Tips:</b> scan barcode langsung di kolom cari Kasir, lalu tekan Enter.</div>';
 
-    const main = (this.can('dashboard') ? ['dashboard', 'kasir', 'pelanggan', 'produk'] : ['kasir', 'pelanggan', 'produk']).filter((p) => this.canPage(p));
+    const main = (this.can('dashboard') ? ['dashboard', 'kasir', 'pelanggan', 'produk'] : ['kasir', 'pesanan', 'pelanggan', 'produk']).filter((p) => this.canPage(p));
     bottom.innerHTML = main.map((p) => '<button data-go="' + p + '">' + icon(PAGE_META[p].icon) + '<span>' + esc(PAGE_META[p].short || PAGE_META[p].title) + '</span></button>').join('') +
       '<button data-act="more">' + icon('menu') + '<span>Menu</span></button>';
     bottom.hidden = false;

@@ -155,6 +155,40 @@ async function main() {
   await page.screenshot({ path: path.join(OUT, '19-receipt-print.png') });
   await page.emulateMedia({ media: 'screen' });
 
+  // ---------------- WhatsApp bot: settings, incoming order → Kasir → closed ----------------
+  await visit('pengaturan', '14b-pengaturan-wa-phone');
+  await page.click('#stTabs [data-tab="wa"]');
+  await page.click('#waSecret');
+  await page.waitForSelector('#waEnv');
+  const env = await page.inputValue('#waEnv');
+  const secret = (env.match(/BOT_SECRET=([a-f0-9]{64})/) || [])[1];
+  if (!secret) errors.push('secret not shown: ' + env);
+  gas.post({ kw: 'wa', secret, action: 'hello', me: '6281111111111', groups: [{ id: '120363000000001@g.us', name: 'Pelanggan Warung' }] });
+  await page.click('#waReload');
+  await page.waitForSelector('[data-wa-group]');
+  await shot(page, '14c-pengaturan-wa-status-phone');
+  await noHScroll(page, 'pengaturan wa');
+  const waReply = gas.post({ kw: 'wa', secret, action: 'message', chat: '120363000000001@g.us', chatName: 'Pelanggan Warung', isGroup: true,
+    sender: '6281234567801', name: 'Siti', text: 'pesan\n2 indomie goreng\n1 gas 3kg', id: 'UI1' }).replies[0] || '';
+  const waId = (waReply.match(/PSN\d{6}-\d{3}/) || [])[0];
+  if (!waId) errors.push('WA order not created: ' + waReply);
+  await visit('pesanan', '14d-pesanan-wa-phone', '#poList .cust-card');
+  await page.click('[data-po="kasir"][data-id="' + waId + '"]');
+  await page.waitForSelector('#page-kasir:not([hidden])');
+  await page.click('#cartBarBtn');
+  await page.waitForSelector('[data-clear-wa]');
+  await shot(page, '14e-kasir-dari-pesanan-wa-phone');
+  await page.click('#cartPay');
+  await page.click('.pay-methods [data-m="Tunai"]');
+  await page.click('#payQuick [data-cash]');
+  await page.click('#payDo');
+  await page.waitForSelector('.success-burst');
+  await page.click('.modal-foot [data-close]');
+  const waRow = gas.rows('WaOrders').find((o) => o.order_id === waId);
+  if (!waRow || waRow.status !== 'Selesai' || !waRow.trx_id) errors.push('WA order not closed by checkout: ' + JSON.stringify(waRow));
+  const outbox = gas.post({ kw: 'wa', secret, action: 'poll' }).outbox;
+  if (!outbox.some((m) => /selesai/.test(m.text))) errors.push('no thank-you notification: ' + JSON.stringify(outbox));
+
   // ---------------- Kasir role ----------------
   const kp = await newPage({ ...phone });
   await kp.fill('#loginUser', 'kasir');
@@ -169,6 +203,9 @@ async function main() {
   await kp.evaluate(() => App.go('produk'));
   await kp.waitForSelector('#prTable table');
   await shot(kp, '20-kasir-role-produk');
+  await kp.evaluate(() => App.go('pesanan'));
+  await kp.waitForSelector('#poList .card');
+  if (await kp.evaluate(() => App.page) !== 'pesanan') errors.push('kasir cannot open Pesanan WA');
 
   // ---------------- Desktop ----------------
   const dp = await newPage({ viewport: { width: 1366, height: 860 } });

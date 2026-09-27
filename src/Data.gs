@@ -84,6 +84,13 @@ const SCHEMA = {
     types: { timestamp: 'datetime', ref_id: 'text', amount: 'money' },
     lists: {},
     widths: { timestamp: 140, action: 150, ref_id: 140, details: 420 }
+  },
+  WaOrders: {
+    headers: ['order_id', 'datetime', 'customer_name', 'phone', 'chat_id', 'chat_name', 'items_json', 'total', 'status',
+      'note', 'customer_id', 'trx_id', 'handled_by'],
+    types: { order_id: 'text', datetime: 'datetime', phone: 'text', chat_id: 'text', total: 'money', customer_id: 'text', trx_id: 'text' },
+    lists: { status: ['Baru', 'Diproses', 'Selesai', 'Batal'] },
+    widths: { order_id: 130, datetime: 140, customer_name: 160, phone: 130, chat_id: 200, chat_name: 160, items_json: 320, note: 320 }
   }
 };
 

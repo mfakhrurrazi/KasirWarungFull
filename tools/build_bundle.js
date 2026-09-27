@@ -16,7 +16,7 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..');
 const SRC = path.join(ROOT, 'src');
 const DIST = path.join(ROOT, 'dist');
-const GS_ORDER = ['Data.gs', 'Setup.gs', 'Code.gs', 'Reports.gs', 'AI.gs', 'TemplateData.gs'];
+const GS_ORDER = ['Data.gs', 'Setup.gs', 'Code.gs', 'Reports.gs', 'AI.gs', 'WhatsApp.gs', 'TemplateData.gs'];
 
 function build() {
   const version = (/VERSION:\s*'([^']+)'/.exec(fs.readFileSync(path.join(SRC, 'Code.gs'), 'utf8')) || [])[1] || '';
