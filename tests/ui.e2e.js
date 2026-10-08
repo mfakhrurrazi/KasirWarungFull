@@ -28,6 +28,7 @@ const SHIM = `
 async function main() {
   const gas = createGas({ bundle: !!process.env.KW_BUNDLE }); // KW_BUNDLE=1 tests the 2-file all-in-one build
   gas.call('setupDatabase');
+  gas.state.props.set('AUTH_MODE', 'login'); // login flows first; open mode is checked at the end
   const errors = [];
   global.__uiErrors = errors;
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
@@ -252,7 +253,29 @@ async function main() {
   const navAnon = await sp.$$eval('#bottomnav [data-go]', (b) => b.length);
   if (navAnon) errors.push('anonymous shop visitor sees app navigation');
 
+  // ---------------- Open mode: no login, straight to Kasir, every menu ----------------
+  gas.state.props.set('AUTH_MODE', 'open');
+  const op = await newPage({ ...phone });
+  await op.waitForSelector('#page-kasir:not([hidden]) #posGrid .prod');
+  if (await op.isVisible('#page-login')) errors.push('login page shown in open mode');
+  await shot(op, '27-tanpa-login-kasir-phone');
+  const openNav = await op.$$eval('#bottomnav [data-go]', (b) => b.map((x) => x.getAttribute('data-go')));
+  if (openNav.indexOf('dashboard') < 0) errors.push('open mode lacks owner menus: ' + openNav);
+  for (const pg of ['dashboard', 'laporan', 'pelanggan', 'stok', 'pengaturan', 'pesanan']) {
+    await op.evaluate((p) => App.go(p), pg);
+    if (await op.evaluate(() => App.page) !== pg) errors.push('open mode cannot open ' + pg);
+  }
+  await op.click('#userBtn');
+  if (await op.$('#userMenu [data-act="logout"]')) errors.push('logout shown in open mode');
+  // an expired session renews itself silently
+  await op.evaluate(() => { App.token = 'f'.repeat(48); });
+  await op.evaluate(() => App.go('kasir'));
+  await op.evaluate(() => api('apiRecentSales').catch(() => null));
+  await op.waitForFunction(() => App.token && App.token !== 'f'.repeat(48));
+  if (await op.evaluate(() => App.page) !== 'kasir') errors.push('session renewal left the kasir page');
+
   // ---------------- Desktop ----------------
+  gas.state.props.set('AUTH_MODE', 'login');
   const dp = await newPage({ viewport: { width: 1366, height: 860 } });
   await dp.fill('#loginUser', 'admin');
   await dp.fill('#loginPass', 'rahasia123');

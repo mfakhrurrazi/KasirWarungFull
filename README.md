@@ -284,6 +284,7 @@ Use a real 5-inch Android phone (Chrome) and a laptop. Tick each item.
 - Every input is validated on the server (`vStr_`, `vNum_`, `vDate_`, `vPhone_`, `vOneOf_`, `vId_`); client checks are only for convenience.
 - All dynamic HTML goes through `esc()`. Server-rendered PDF uses `esc_()`, and boot JSON is `<`/`>`/`&`-escaped.
 - Strings beginning with `= + - @` are stored as text, so nothing typed by users can become a spreadsheet formula (also for CSV exports).
+- **Access mode** (Script Property `AUTH_MODE`): `open` (default) — no login, the web app opens straight into Kasir with a full-access Owner session named *Kasir Umum* (`apiAutoLogin`), renewed silently when it expires; anyone with the URL can use every feature. `login` — username/password with Owner/Kasir roles. Switch in Pengaturan → Akses Publik → *Wajib login*; switching on ends all open-mode sessions at once.
 - Passwords: salted SHA-256; login lock after 5 failures for 15 minutes (the owner can clear it at once by running `bukaKunciLogin()` from the editor; it refuses anyone but the script owner); sessions expire after 8 hours.
 - `AI_API_KEY` lives only in Script Properties. `callAI` is gated so a direct `google.script.run.callAI()` from the browser is rejected.
 - Logo URLs must be `https://`.

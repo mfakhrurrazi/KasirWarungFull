@@ -82,6 +82,11 @@
 
   <div data-panel="publik" hidden>
     <div class="card">
+      <h2>Login aplikasi</h2>
+      <label class="switch"><span>Wajib login<br><small class="muted">Mati = siapa pun yang membuka link aplikasi langsung masuk ke Kasir dengan akses penuh (semua menu, laporan, kasbon, pengaturan). Nyalakan bila link aplikasi bisa diketahui orang lain.</small></span><input type="checkbox" id="pbLogin"></label>
+      <div id="pbLoginNote"></div>
+    </div>
+    <div class="card mt2">
       <h2>Toko online (tanpa login)</h2>
       <p class="small muted">Siapa pun bisa melihat katalog &amp; harga, memesan, dan cek status pesanan. Harga modal, stok persis (kecuali diizinkan), kasbon dan laporan <b>tidak</b> pernah tampil.</p>
       <div id="pbShopLink"></div>
@@ -238,6 +243,8 @@ Pages.pengaturan = {
       $('#pbShopLink').innerHTML = '<div class="notice n-info" style="align-items:center">' + icon('store') + '<span style="flex:1;word-break:break-all">' + esc(shopUrl) + '</span>' +
         '<button class="btn btn-sm" id="pbCopyShop">Salin</button><a class="btn btn-sm" target="_blank" rel="noopener" href="' + esc(shopUrl) + '">Buka</a></div>';
       $('#pbCopyShop').addEventListener('click', () => this.copyText(shopUrl));
+      $('#pbLogin').checked = !!c.login;
+      $('#pbLoginNote').innerHTML = c.login ? '' : '<div class="notice n-warn">' + icon('alert') + '<span>Mode tanpa login aktif: semua orang yang tahu link aplikasi bisa membuka semua fitur.</span></div>';
       $('#pbShop').checked = c.shop; $('#pbOrders').checked = c.shopOrders; $('#pbStock').value = c.shopStock; $('#pbNote').value = c.shopNote || ''; $('#pbApi').checked = c.api;
       $('#pbKeyAccess').innerHTML = d.access.map((a) => '<option value="' + esc(a.id) + '">' + esc(a.label) + '</option>').join('');
       this.renderKeys(d.keys);
@@ -257,8 +264,21 @@ Pages.pengaturan = {
       : '<p class="muted small">Belum ada kunci API.</p>';
   },
   async savePublic() {
-    const payload = { shop: $('#pbShop').checked, shopOrders: $('#pbOrders').checked, shopStock: $('#pbStock').value, shopNote: $('#pbNote').value, api: $('#pbApi').checked };
-    try { await withBusy('Menyimpan…', () => api('apiPublicSaveConfig', payload)); toast('Akses publik tersimpan', 'ok'); } catch (e) { /* toast */ }
+    const payload = { shop: $('#pbShop').checked, shopOrders: $('#pbOrders').checked, shopStock: $('#pbStock').value, shopNote: $('#pbNote').value, api: $('#pbApi').checked, login: $('#pbLogin').checked };
+    const turningOn = payload.login && this.pub && !this.pub.config.login;
+    if (turningOn && !(await confirmBox({ title: 'Wajibkan login?', message: 'Semua perangkat yang sedang terbuka tanpa login akan keluar. Pastikan Anda ingat username & password Owner (bawaan: admin / admin123).', okText: 'Ya, wajib login' }))) return;
+    try {
+      const r = await withBusy('Menyimpan…', () => api('apiPublicSaveConfig', payload));
+      toast('Akses publik tersimpan', 'ok');
+      if (turningOn && App.openMode) {
+        App.boot.openMode = false;
+        App.clearSession();
+        App.go('login');
+        return;
+      }
+      App.boot.openMode = !r.config.login;
+      this.loadPublic();
+    } catch (e) { /* toast */ }
   },
   async newApiKey() {
     const label = $('#pbKeyName').value.trim();

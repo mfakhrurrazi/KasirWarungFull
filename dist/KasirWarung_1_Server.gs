@@ -1560,7 +1560,7 @@ function safeJsonForHtml_(obj) {
 function bootInfo_() {
   const info = {
     app: { name: APP.NAME, version: APP.VERSION, maker: APP.MAKER, year: APP.YEAR, supportWa: supportWa_() },
-    dbReady: false, setupDone: false,
+    dbReady: false, setupDone: false, openMode: authMode_() === 'open',
     business: { name: 'KasirWarung AI', logo: '', address: '', whatsapp: '' },
     license: licenseStatus_()
   };
@@ -1676,6 +1676,7 @@ function sessionPayload_(s) {
     setupDone: !!st.SETUP_DONE,
     license: licenseStatus_(),
     ai: { enabled: !!st.AI_ENABLED, configured: aiConfigured_() },
+    openMode: authMode_() === 'open',
     categories: CATEGORIES, units: UNITS, methods: METHODS
   };
 }
@@ -1727,15 +1728,42 @@ function apiLogin(username, password) {
       throw appError_('LOGIN', 'Username atau password salah' + (row && !isTrue_(row.active) ? ' (akun nonaktif).' : '.'));
     }
     cache.remove(failKey);
-    const token = (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, '').substring(0, 48);
-    const now = Date.now();
-    const s = {
-      token: token, username: String(row.username), full_name: String(row.full_name || row.username),
-      role: ROLES.indexOf(String(row.role)) >= 0 ? String(row.role) : 'Kasir',
-      iat: now, exp: now + APP.SESSION_HOURS * 3600 * 1000
-    };
-    cache.put('sess_' + token, JSON.stringify(s), 21600);
+    const s = newSession_(String(row.username), String(row.full_name || row.username),
+      ROLES.indexOf(String(row.role)) >= 0 ? String(row.role) : 'Kasir');
     logActivity_(s.username, 'LOGIN', '', '', { role: s.role });
+    return ok_(sessionPayload_(s));
+  } catch (e) {
+    return fail_(e);
+  }
+}
+
+function newSession_(username, fullName, role) {
+  const token = (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, '').substring(0, 48);
+  const now = Date.now();
+  const s = { token: token, username: username, full_name: fullName, role: role, iat: now, exp: now + APP.SESSION_HOURS * 3600 * 1000 };
+  CacheService.getScriptCache().put('sess_' + token, JSON.stringify(s), 21600);
+  return s;
+}
+
+/**
+ * Access mode (Script Property AUTH_MODE):
+ *   'open'  (default) — no login: the web app opens straight into Kasir with full (Owner) access.
+ *   'login' — username + password, Owner/Kasir roles.
+ * Switch in Pengaturan → Akses Publik → "Wajib login".
+ */
+const OPEN_USER = { username: 'umum', full_name: 'Kasir Umum', role: 'Owner' };
+
+function authMode_() {
+  return props_().getProperty('AUTH_MODE') === 'login' ? 'login' : 'open';
+}
+
+/** Open mode only: a full-access session without username/password. */
+function apiAutoLogin() {
+  try {
+    if (authMode_() !== 'open') throw appError_('FORBIDDEN', 'Aplikasi ini wajib login. Masukkan username dan password.');
+    if (!isDbReady_()) throw appError_('NO_DB', 'Database belum disiapkan. Tekan "Siapkan Database".');
+    const s = newSession_(OPEN_USER.username, OPEN_USER.full_name, OPEN_USER.role);
+    logActivity_(s.username, 'AKSES_TANPA_LOGIN', '', '', '');
     return ok_(sessionPayload_(s));
   } catch (e) {
     return fail_(e);
@@ -4522,7 +4550,9 @@ function apiShopStatus(orderId, phone) {
 function apiPublicGetConfig(token) {
   return run_(token, 'settings', function () {
     const url = ScriptApp.getService().getUrl() || '';
-    return { config: publicConfig_(), keys: apiKeys_().map(apiKeyOut_), url: url,
+    const config = publicConfig_();
+    config.login = authMode_() === 'login';
+    return { config: config, keys: apiKeys_().map(apiKeyOut_), url: url,
       access: Object.keys(API_ACCESS).map(function (k) { return { id: k, label: API_ACCESS[k].label }; }) };
   });
 }
@@ -4538,8 +4568,19 @@ function apiPublicSaveConfig(token, payload) {
       api: p.api === undefined ? PUBLIC_DEFAULTS.api : vBool_(p.api)
     };
     props_().setProperty('PUBLIC_CONFIG', JSON.stringify(cfg));
-    logActivity_(s.username, 'AKSES_PUBLIK', '', '', cfg);
-    return { config: publicConfig_() };
+    if (p.login !== undefined) {
+      const login = vBool_(p.login);
+      if (login && authMode_() !== 'login') {
+        props_().setProperty('AUTH_MODE', 'login');
+        revokeUser_(OPEN_USER.username); // open-mode sessions end now
+      } else if (!login && authMode_() !== 'open') {
+        props_().setProperty('AUTH_MODE', 'open');
+      }
+    }
+    logActivity_(s.username, 'AKSES_PUBLIK', '', '', Object.assign({ login: authMode_() === 'login' }, cfg));
+    const out = publicConfig_();
+    out.login = authMode_() === 'login';
+    return { config: out };
   });
 }
 

@@ -866,3 +866,35 @@ test('public shop: catalogue without secrets, online order into Pesanan WA, stat
   assert.equal(JSON.parse(gas.call('apiShopCatalog')).code, 'OFF');
   assert.equal(gas.apiGet({ api: 'toko_katalog' }).json().code, 'OFF');
 });
+
+test('open mode (default): no login, full access, owner can switch login back on', () => {
+  const gas = boot();
+  assert.equal(JSON.parse(gas.call('apiBoot')).data.openMode, true);
+  const a = JSON.parse(gas.call('apiAutoLogin'));
+  assert.equal(a.ok, true, a.error);
+  assert.equal(a.data.user.role, 'Owner');
+  assert.equal(a.data.user.full_name, 'Kasir Umum');
+  assert.equal(a.data.openMode, true);
+  const tok = a.data.token;
+  // every feature works with that session
+  ok(gas.api('apiDashboard', tok));
+  ok(gas.api('apiGetSettings', tok));
+  const p = ok(gas.api('apiProducts', tok)).find((x) => x.stock >= 3);
+  const sale = ok(gas.api('apiCheckout', tok, { items: [{ product_id: p.product_id, qty: 1 }], method: 'Tunai', paid: 100000 }));
+  assert.equal(sale.cashier, 'Kasir Umum');
+  assert.ok(gas.rows('Log_Activity').some((r) => r.user === 'umum' && r.action === 'AKSES_TANPA_LOGIN'));
+
+  // switch login on: open sessions end, auto login refused, normal login works
+  ok(gas.api('apiPublicSaveConfig', tok, { login: true }));
+  assert.equal(gas.api('apiDashboard', tok).code, 'AUTH');
+  assert.equal(JSON.parse(gas.call('apiAutoLogin')).code, 'FORBIDDEN');
+  assert.equal(JSON.parse(gas.call('apiBoot')).data.openMode, false);
+  const t = login(gas);
+  assert.equal(ok(gas.api('apiPublicGetConfig', t)).config.login, true);
+  // and back off again
+  ok(gas.api('apiPublicSaveConfig', t, { login: false }));
+  assert.equal(JSON.parse(gas.call('apiAutoLogin')).ok, true);
+  // saving other public settings without "login" leaves the mode alone
+  ok(gas.api('apiPublicSaveConfig', t, { shopNote: 'x' }));
+  assert.equal(gas.state.props.get('AUTH_MODE'), 'open');
+});

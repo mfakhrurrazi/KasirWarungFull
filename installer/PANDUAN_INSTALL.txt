@@ -63,8 +63,11 @@ LANGKAH 7 — Deploy sebagai Web App
 
 
 LANGKAH 8 — Mulai jualan
-  1. Buka URL /exec di HP → login  admin / admin123
-  2. Ikuti Setup Wizard (WAJIB ganti password).
+  1. Buka URL /exec di HP → langsung masuk ke halaman Kasir (TANPA login), semua menu terbuka.
+     ⚠ Siapa pun yang tahu link ini bisa membuka semua fitur (laporan, kasbon, pengaturan, reset).
+     Untuk mewajibkan login: Pengaturan → Akses Publik → nyalakan "Wajib login"
+     (lalu login admin / admin123 dan ganti password lewat Setup Wizard).
+  2. Atur profil warung di Pengaturan → Profil (atau buka Setup Wizard dari Pengaturan → Data & Backup).
   3. Chrome Android: ⋮ → "Tambahkan ke layar utama".
   4. Pengaturan → Data & Backup → aktifkan "Backup otomatis".
 

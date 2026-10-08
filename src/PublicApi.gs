@@ -348,7 +348,9 @@ function apiShopStatus(orderId, phone) {
 function apiPublicGetConfig(token) {
   return run_(token, 'settings', function () {
     const url = ScriptApp.getService().getUrl() || '';
-    return { config: publicConfig_(), keys: apiKeys_().map(apiKeyOut_), url: url,
+    const config = publicConfig_();
+    config.login = authMode_() === 'login';
+    return { config: config, keys: apiKeys_().map(apiKeyOut_), url: url,
       access: Object.keys(API_ACCESS).map(function (k) { return { id: k, label: API_ACCESS[k].label }; }) };
   });
 }
@@ -364,8 +366,19 @@ function apiPublicSaveConfig(token, payload) {
       api: p.api === undefined ? PUBLIC_DEFAULTS.api : vBool_(p.api)
     };
     props_().setProperty('PUBLIC_CONFIG', JSON.stringify(cfg));
-    logActivity_(s.username, 'AKSES_PUBLIK', '', '', cfg);
-    return { config: publicConfig_() };
+    if (p.login !== undefined) {
+      const login = vBool_(p.login);
+      if (login && authMode_() !== 'login') {
+        props_().setProperty('AUTH_MODE', 'login');
+        revokeUser_(OPEN_USER.username); // open-mode sessions end now
+      } else if (!login && authMode_() !== 'open') {
+        props_().setProperty('AUTH_MODE', 'open');
+      }
+    }
+    logActivity_(s.username, 'AKSES_PUBLIK', '', '', Object.assign({ login: authMode_() === 'login' }, cfg));
+    const out = publicConfig_();
+    out.login = authMode_() === 'login';
+    return { config: out };
   });
 }
 

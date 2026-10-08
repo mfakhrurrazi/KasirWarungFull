@@ -248,7 +248,7 @@ function aiBadge(source) {
 }
 
 /* ---------------- Server calls ---------------- */
-const PUBLIC_FNS = ['apiBoot', 'apiInitDatabase', 'apiLogin', 'apiShopCatalog', 'apiShopOrder', 'apiShopStatus'];
+const PUBLIC_FNS = ['apiBoot', 'apiInitDatabase', 'apiLogin', 'apiAutoLogin', 'apiShopCatalog', 'apiShopOrder', 'apiShopStatus'];
 
 function api(fn) {
   const args = Array.prototype.slice.call(arguments, 1);
@@ -508,8 +508,10 @@ const App = {
     if (m.public) return true;
     return !!this.token && this.can(m.perm);
   },
+  get openMode() { return !!this.boot.openMode; },
   defaultPage() {
     if (!this.token) return 'login';
+    if (this.openMode) return 'kasir';
     if (this.can('settings') && !this.setupDone) return 'setup';
     return this.can('dashboard') ? 'dashboard' : 'kasir';
   },
@@ -537,11 +539,13 @@ const App = {
         Store.del('token');
       }
     }
+    if (this.boot.dbReady && this.openMode && !this.token) await this.autoLogin();
     $('#bootSplash').remove();
     this.go(wanted && this.canPage(wanted) ? wanted : this.defaultPage(), { push: false, replace: true });
   },
 
   applySession(d) {
+    if (d.openMode !== undefined) this.boot.openMode = !!d.openMode;
     this.token = d.token;
     Store.set('token', d.token);
     this.user = d.user;
@@ -563,9 +567,21 @@ const App = {
     this.renderLicenseBanner();
   },
 
-  sessionExpired(msg) {
+  /** Open mode (no login): get a full-access session silently. */
+  async autoLogin() {
+    try {
+      this.applySession(await api('apiAutoLogin'));
+      return true;
+    } catch (e) {
+      if (e.code === 'FORBIDDEN') this.boot.openMode = false; // owner switched login back on
+      return false;
+    }
+  },
+
+  async sessionExpired(msg) {
     if (!this.token) return;
     this.clearSession();
+    if (this.openMode && await this.autoLogin()) { this.go(this.page && this.page !== 'login' ? this.page : 'kasir', { push: false }); return; }
     toast(msg || 'Sesi berakhir. Silakan login lagi.', 'err');
     this.go('login');
   },
@@ -593,7 +609,7 @@ const App = {
       page = this.defaultPage();
     }
     if (page === 'login' && this.token) page = this.defaultPage();
-    if (this.token && this.can('settings') && !this.setupDone && !PAGE_META[page].public && page !== 'setup') page = 'setup';
+    if (this.token && !this.openMode && this.can('settings') && !this.setupDone && !PAGE_META[page].public && page !== 'setup') page = 'setup';
 
     $$('#main > .page').forEach((s) => { s.hidden = true; });
     const sec = document.getElementById('page-' + page);
@@ -651,10 +667,10 @@ const App = {
     if (!this.user) { this.go('login'); return; }
     if (!menu.hidden) { menu.hidden = true; return; }
     menu.innerHTML = '<div class="um-head"><b>' + esc(this.user.full_name) + '</b><div class="muted small">@' + esc(this.user.username) + ' · ' + esc(this.user.role) + '</div></div>' +
-      '<button data-act="password">' + icon('lock') + 'Ganti password</button>' +
+      (this.openMode ? '' : '<button data-act="password">' + icon('lock') + 'Ganti password</button>') +
       '<button data-act="panduan">' + icon('help') + 'Panduan</button>' +
       (this.can('settings') ? '<button data-act="pengaturan">' + icon('sliders') + 'Pengaturan</button>' : '') +
-      '<button data-act="logout">' + icon('logout') + 'Keluar</button>';
+      (this.openMode ? '' : '<button data-act="logout">' + icon('logout') + 'Keluar</button>');
     menu.hidden = false;
     $('#userBtn').setAttribute('aria-expanded', 'true');
   },
@@ -711,8 +727,8 @@ const App = {
     const m = openModal({
       title: 'Menu',
       body: '<div class="grid">' + pages.map((p) => '<button class="nav-item" data-go="' + p + '">' + icon(PAGE_META[p].icon) + '<span>' + esc(PAGE_META[p].title) + '</span></button>').join('') +
-        '<div class="nav-sep"></div><button class="nav-item" data-act="password">' + icon('lock') + '<span>Ganti password</span></button>' +
-        '<button class="nav-item" data-act="logout">' + icon('logout') + '<span>Keluar</span></button></div>',
+        (this.openMode ? '</div>' : '<div class="nav-sep"></div><button class="nav-item" data-act="password">' + icon('lock') + '<span>Ganti password</span></button>' +
+        '<button class="nav-item" data-act="logout">' + icon('logout') + '<span>Keluar</span></button></div>'),
       noFocus: true
     });
     m.el.addEventListener('click', (e) => { if (e.target.closest('[data-go],[data-act]')) m.close(); });
