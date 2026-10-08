@@ -20,7 +20,7 @@ const APP = {
 };
 
 const PAGES = ['login', 'setup', 'dashboard', 'kasir', 'pesanan', 'produk', 'stok', 'pelanggan', 'laporan',
-  'pengaturan', 'panduan', 'lisensi', 'tentang', 'syarat', 'privasi'];
+  'pengaturan', 'panduan', 'lisensi', 'tentang', 'syarat', 'privasi', 'toko'];
 
 /** Permission → roles allowed. Owner = everything, Kasir = sales, customers, view stock. */
 const PERMS = {
@@ -50,6 +50,11 @@ const PERMS = {
 /* ------------------------------------------------------------------ */
 
 function doGet(e) {
+  if (e && e.parameter && e.parameter.api !== undefined) {
+    let out;
+    try { out = apiRoute_(e, false); } catch (err) { out = { ok: false, code: 'ERR', error: 'Server error: ' + ((err && err.message) || err) }; }
+    return apiOut_(out, e.parameter.callback);
+  }
   const requested = e && e.parameter && e.parameter.page ? String(e.parameter.page).toLowerCase() : '';
   const page = PAGES.indexOf(requested) >= 0 ? requested : '';
   const tpl = HtmlService.createTemplate(htmlSource_('Index'));
@@ -72,7 +77,9 @@ function doPost(e) {
   try { body = JSON.parse((e && e.postData && e.postData.contents) || '{}') || {}; } catch (err) { body = {}; }
   let out;
   try {
-    out = body.kw === 'wa' ? waWebhook_(body) : { ok: false, error: 'Permintaan tidak dikenal.' };
+    if (body.kw === 'wa') out = waWebhook_(body);
+    else if (body.api !== undefined || (e && e.parameter && e.parameter.api !== undefined)) return apiOut_(apiRoute_(e, true));
+    else out = { ok: false, error: 'Permintaan tidak dikenal. Lihat ?api=bantuan' };
   } catch (err) {
     console.error((err && err.stack) || err);
     out = { ok: false, error: 'Server error: ' + ((err && err.message) || err) };
@@ -1232,7 +1239,7 @@ function csvCell_(v) {
 
 function apiExportSheet(token, name) {
   return run_(token, 'report', function () {
-    const allowed = ['Products', 'Customers', 'Sales', 'Credits', 'StockMoves', 'Log_Activity', 'Log_AI'];
+    const allowed = ['Products', 'Customers', 'Sales', 'Credits', 'StockMoves', 'WaOrders', 'Log_Activity', 'Log_AI'];
     const n = vOneOf_(name, allowed, 'Sheet');
     const t = readTable_(n);
     const headers = SCHEMA[n].headers;

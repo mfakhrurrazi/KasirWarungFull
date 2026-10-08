@@ -397,20 +397,20 @@ function waSaveOrder_(who, items, total, missing, shortStock, raw) {
   const notes = [];
   if (missing.length) notes.push('Belum ketemu: ' + missing.join(', '));
   if (shortStock.length) notes.push('Stok kurang: ' + shortStock.join(', '));
-  notes.push('Pesan asli: ' + String(raw).replace(/\s+/g, ' ').substring(0, 300));
+  notes.push((who.chat === 'web' ? 'Toko online: ' : 'Pesan asli: ') + String(raw).replace(/\s+/g, ' ').substring(0, 300));
   const row = withLock_(function () {
     const t = waOrdersMeta_();
     const now = new Date();
     const r = {
       order_id: idGen_(t, 'order_id', 'PSN', now)(), datetime: now, customer_name: who.name, phone: who.phone,
-      chat_id: who.chat, chat_name: who.isGroup ? (who.chatName || 'Grup') : 'Chat pribadi',
+      chat_id: who.chat, chat_name: who.chatName || (who.isGroup ? 'Grup' : 'Chat pribadi'),
       items_json: JSON.stringify(items), total: total, status: 'Baru', note: notes.join(' | ').substring(0, 1000),
       customer_id: cust ? String(cust.customer_id) : '', trx_id: '', handled_by: ''
     };
     appendRows_(t, [r]);
     return r;
   });
-  logActivity_('WhatsApp', 'PESANAN_WA', row.order_id, total, { from: who.name, items: items.length, chat: row.chat_name });
+  logActivity_(who.chat === 'web' ? 'Toko online' : 'WhatsApp', who.chat === 'web' ? 'PESANAN_ONLINE' : 'PESANAN_WA', row.order_id, total, { from: who.name, items: items.length, chat: row.chat_name });
   return row;
 }
 
@@ -553,7 +553,7 @@ function waSetStatus_(s, orderId, status, extra) {
   let notified = false;
   if (cfg.enabled && cfg.notify && props_().getProperty('WA_BOT_SECRET')) {
     const text = waNotifyText_(r, next, reason, getSettings_());
-    const to = r.phone ? String(r.phone) : String(r.chat_id || '');
+    const to = String(r.chat_id) === 'web' ? '' : (r.phone ? String(r.phone) : String(r.chat_id || ''));
     if (text && to) { waQueue_(to, text); notified = true; }
   }
   return { changed: true, notified: notified, order: waOrderOut_(r) };

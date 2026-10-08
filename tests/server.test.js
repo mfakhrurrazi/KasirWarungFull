@@ -653,7 +653,7 @@ test('WhatsApp bot: secret, commands, orders, kasbon privacy, notifications and 
   const order = gas.rows('WaOrders').pop();
   assert.equal(order.order_id, id);
   assert.equal(order.status, 'Baru');
-  assert.equal(order.customer_id, 'PLG260828-001');
+  assert.equal(order.customer_id, gas.rows('Customers').find((c) => c.phone === '6281234567801').customer_id);
   const items = JSON.parse(order.items_json);
   assert.deepEqual(items.map((i) => [i.name, i.qty]), [['Indomie Goreng 85 g', 2], ['Gas LPG 3 kg (Isi Ulang)', 1], ['Beras Medium Curah', 5]]);
   assert.equal(items[2].price, 13200, 'bundle price for 5 kg');
@@ -734,4 +734,135 @@ test('WhatsApp bot: secret, commands, orders, kasbon privacy, notifications and 
   for (let i = 0; i < 10; i++) spam.push(say('menu', { sender: '6285555555555', chat: '6285555555555@s.whatsapp.net', keepRate: i > 0 }).replies.join());
   assert.match(spam[8], /Pelan-pelan/);
   assert.equal(spam[9], '');
+});
+
+test('public API: keys with access levels, GET/POST rules, every action routed through role checks', () => {
+  const gas = boot();
+  const t = login(gas);
+  const get = (p) => gas.apiGet(p).json();
+  // self-documenting catalogue, no key needed
+  const help = get({ api: 'bantuan' });
+  assert.equal(help.ok, true);
+  assert.ok(help.data.aksi.find((a) => a.aksi === 'jual' && a.metode === 'POST'));
+  assert.ok(help.data.toko.find((a) => a.aksi === 'toko_pesan'));
+  assert.equal(help.data.aksi.find((a) => /reset|demo|pengguna|lisensi/.test(a.aksi)), undefined, 'dangerous actions are not exposed');
+
+  assert.equal(get({ api: 'produk' }).code, 'AUTH');
+  assert.equal(get({ api: 'produk', key: 'kw_' + 'a'.repeat(40) }).code, 'AUTH');
+  assert.equal(get({ api: 'tidakada', key: 'x' }).code, 'UNKNOWN');
+  // only the owner manages keys
+  ok(gas.api('apiSaveUser', t, { username: 'kasir9', full_name: 'Kasir Sembilan', role: 'Kasir', password: 'kasir9pw', active: true }));
+  assert.equal(gas.api('apiPublicNewKey', login(gas, 'kasir9', 'kasir9pw'), 'x', 'owner').code, 'FORBIDDEN');
+  const read = ok(gas.api('apiPublicNewKey', t, 'Website', 'baca'));
+  const kas = ok(gas.api('apiPublicNewKey', t, 'Tablet kasir', 'kasir'));
+  const own = ok(gas.api('apiPublicNewKey', t, 'n8n', 'owner'));
+  assert.match(read.key, /^kw_[a-f0-9]{40}$/);
+  const cfg = ok(gas.api('apiPublicGetConfig', t));
+  assert.equal(cfg.keys.length, 3);
+  assert.equal(JSON.stringify(cfg).indexOf(read.key), -1, 'stored keys are hashed, never shown again');
+  assert.equal((gas.state.props.get('API_KEYS') || '').indexOf(read.key), -1);
+
+  // read key: reads everything, writes nothing
+  const prods = get({ api: 'produk', key: read.key });
+  assert.equal(prods.ok, true);
+  assert.ok('cost_price' in prods.data[0]);
+  assert.equal(get({ api: 'dashboard', key: read.key }).ok, true);
+  assert.equal(get({ api: 'laporan', key: read.key, from: '2026-01-01', to: '2026-12-31' }).ok, true);
+  const p0 = prods.data.find((p) => p.stock >= 5);
+  assert.equal(gas.apiPost({ api: 'jual', key: read.key, items: [{ product_id: p0.product_id, qty: 1 }], method: 'Tunai', paid: 100000 }).code, 'FORBIDDEN');
+
+  // kasir key: sells (POST only), cannot see owner data
+  assert.equal(get({ api: 'jual', key: kas.key, items: [{ product_id: p0.product_id, qty: 1 }], method: 'Tunai', paid: 100000 }).code, 'METHOD');
+  const sale = gas.apiPost({ api: 'jual', key: kas.key, items: [{ product_id: p0.product_id, qty: 2 }], method: 'Tunai', paid: 100000, discount: 0 });
+  assert.equal(sale.ok, true, sale.error);
+  assert.equal(sale.data.cashier, 'API Tablet kasir');
+  assert.equal(gas.rows('Sales').pop().trx_id, sale.data.trx_id);
+  assert.equal(get({ api: 'dashboard', key: kas.key }).code, 'FORBIDDEN');
+  assert.ok(!('cost_price' in get({ api: 'produk', key: kas.key }).data[0]), 'kasir key never sees cost price');
+  assert.equal(get({ api: 'penjualan', key: kas.key, trx_id: sale.data.trx_id }).data.total, sale.data.total);
+  // params in the query string with a JSON body also work
+  const cust = gas.apiPost({ name: 'Bu API', phone: '081200000001', credit_limit: 50000 }, { api: 'pelanggan_simpan', key: kas.key });
+  assert.equal(cust.ok, true, cust.error);
+
+  // owner key: everything exposed, validation still applies
+  assert.equal(gas.apiPost({ api: 'penjualan_batal', key: own.key, trx_id: sale.data.trx_id, reason: 'tes API' }).ok, true);
+  assert.equal(gas.apiPost({ api: 'stok_opname', key: own.key, product_id: p0.product_id, actual_stock: -5, note: 'x' }).code, 'INVALID');
+  assert.equal(gas.apiPost({ api: 'produk_simpan', key: own.key, name: '=HYPERLINK("x")', category: 'Lainnya', unit: 'pcs', price_retail: 1000 }).ok, true);
+  // (the emulator throws if a formula reaches the sheet, so getting here proves it was stored as text)
+  assert.equal(gas.rows('Products').pop().name, '=HYPERLINK("x")', 'stored as plain text through the API too');
+  const csv = get({ api: 'ekspor', key: own.key, sheet: 'Sales' });
+  assert.match(csv.data.csv, /^trx_id,/);
+
+  // JSONP for browser widgets
+  const jp = gas.apiGet({ api: 'produk', key: read.key, callback: 'tampilkan' });
+  assert.equal(jp.mime, 'application/javascript');
+  assert.match(jp.body, /^tampilkan\(\{"ok":true/);
+  assert.equal(gas.apiGet({ api: 'produk', key: read.key, callback: 'alert(1)//' }).mime, 'application/json', 'unsafe callback ignored');
+
+  // revoke + global switch
+  ok(gas.api('apiPublicRevokeKey', t, cfg.keys.find((k) => k.label === 'Website').id));
+  assert.equal(get({ api: 'produk', key: read.key }).code, 'AUTH');
+  ok(gas.api('apiPublicSaveConfig', t, { api: false }));
+  assert.equal(get({ api: 'produk', key: own.key }).code, 'OFF');
+  ok(gas.api('apiPublicSaveConfig', t, {}));
+  // activity log shows the API as the actor
+  assert.ok(gas.rows('Log_Activity').some((r) => r.user === 'api:' + own.item.id));
+});
+
+test('public shop: catalogue without secrets, online order into Pesanan WA, status by phone, abuse limits', () => {
+  const gas = boot();
+  const t = login(gas);
+  const cat = JSON.parse(gas.call('apiShopCatalog'));
+  assert.equal(cat.ok, true);
+  assert.equal(cat.data.business.name, 'Warung Berkah Jaya');
+  const p = cat.data.products.find((x) => x.name.startsWith('Indomie'));
+  assert.equal(p.stock_label, 'Tersedia');
+  ['cost_price', 'stock', 'barcode', 'min_stock'].forEach((k) => assert.ok(!(k in p), k + ' must not be public'));
+  // same data through the URL API, no key
+  assert.equal(gas.apiGet({ api: 'toko_katalog' }).json().data.products.length, cat.data.products.length);
+
+  const order = (o) => JSON.parse(gas.call('apiShopOrder', Object.assign({ name: 'Rina', phone: '0857-1234-5678', delivery: 'Antar', address: 'Jl. Mawar 3',
+    items: [{ product_id: p.product_id, qty: 5 }], note: 'pedas' }, o || {})));
+  const r = order();
+  assert.equal(r.ok, true, r.error);
+  assert.match(r.data.order_id, /^PSN\d{6}-\d{3}$/);
+  assert.equal(r.data.total, 5 * 3300, 'tier price computed on the server');
+  const row = gas.rows('WaOrders').pop();
+  assert.equal(row.chat_name, 'Toko online');
+  assert.equal(row.phone, '6285712345678');
+  assert.equal(row.customer_id, gas.rows('Customers').find((c) => c.phone === '6285712345678').customer_id, 'matched to the registered customer');
+  assert.match(row.note, /Antar ke: Jl\. Mawar 3 · Catatan: pedas/);
+  // price sent by the browser is ignored, honeypot and validation work
+  assert.equal(order({ items: [{ product_id: p.product_id, qty: 1, price: 1 }] }).data.total, 3500);
+  assert.equal(order({ website: 'spam' }).ok, false);
+  assert.match(order({ address: '' }).error, /Alamat wajib/);
+  assert.match(order({ phone: '123' }).error, /tidak valid/);
+  // status: only with the matching phone number
+  const st = JSON.parse(gas.call('apiShopStatus', r.data.order_id, '085712345678'));
+  assert.equal(st.data.status, 'Baru');
+  assert.equal(JSON.parse(gas.call('apiShopStatus', r.data.order_id, '081299999999')).code, 'NOT_FOUND');
+  assert.equal(gas.apiGet({ api: 'toko_status', order_id: r.data.order_id, phone: '085712345678' }).json().data.status, 'Baru');
+  assert.equal(gas.apiGet({ api: 'toko_pesan', name: 'x' }).json().code, 'METHOD');
+  const viaPost = gas.apiPost({ api: 'toko_pesan', name: 'Dodi', phone: '081377788899', items: [{ product_id: p.product_id, qty: 1 }] });
+  assert.equal(viaPost.ok, true, viaPost.error);
+
+  // kasir sees it in Pesanan WA; status change does NOT message the typed-in number automatically
+  gas.state.props.set('WA_BOT_SECRET', 'f'.repeat(64));
+  ok(gas.api('apiWaSetStatus', t, r.data.order_id, 'Diproses'));
+  assert.equal(gas.state.props.get('WA_OUTBOX') || null, null);
+  assert.equal(JSON.parse(gas.call('apiShopStatus', r.data.order_id, '085712345678')).data.status, 'Diproses');
+
+  // per-number limit (5/hour)
+  for (let i = 0; i < 3; i++) order();
+  assert.match(order().error, /sudah memesan 5 kali/);
+  // owner can close orders or the whole shop
+  ok(gas.api('apiPublicSaveConfig', t, { shopOrders: false, shopStock: 'angka', shopNote: 'Antar gratis 1 km' }));
+  const c2 = JSON.parse(gas.call('apiShopCatalog')).data;
+  assert.equal(c2.orders, false);
+  assert.equal(c2.note, 'Antar gratis 1 km');
+  assert.equal(typeof c2.products[0].stock, 'number');
+  assert.equal(order({ phone: '081311111111' }).code, 'OFF');
+  ok(gas.api('apiPublicSaveConfig', t, { shop: false }));
+  assert.equal(JSON.parse(gas.call('apiShopCatalog')).code, 'OFF');
+  assert.equal(gas.apiGet({ api: 'toko_katalog' }).json().code, 'OFF');
 });

@@ -248,7 +248,7 @@ function aiBadge(source) {
 }
 
 /* ---------------- Server calls ---------------- */
-const PUBLIC_FNS = ['apiBoot', 'apiInitDatabase', 'apiLogin'];
+const PUBLIC_FNS = ['apiBoot', 'apiInitDatabase', 'apiLogin', 'apiShopCatalog', 'apiShopOrder', 'apiShopStatus'];
 
 function api(fn) {
   const args = Array.prototype.slice.call(arguments, 1);
@@ -492,7 +492,8 @@ const PAGE_META = {
   lisensi: { title: 'Lisensi', public: true, icon: 'key', nav: 2 },
   tentang: { title: 'Tentang Aplikasi', short: 'Tentang', public: true, icon: 'star', nav: 2 },
   syarat: { title: 'Syarat Lisensi', public: true },
-  privasi: { title: 'Kebijakan Privasi', public: true }
+  privasi: { title: 'Kebijakan Privasi', public: true },
+  toko: { title: 'Toko Online', public: true }
 };
 
 const App = {

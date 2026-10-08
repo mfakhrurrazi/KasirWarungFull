@@ -1,0 +1,216 @@
+<section class="page" id="page-toko" hidden>
+  <div class="card shop-hero" id="tkHero"></div>
+
+  <div class="tabs mt2" id="tkTabs">
+    <button data-tab="belanja" class="on">Belanja</button>
+    <button data-tab="status">Cek pesanan</button>
+  </div>
+
+  <div data-tk="belanja">
+    <div class="search mb0"><i data-icon="search"></i><input id="tkSearch" type="search" placeholder="Cari barang…" autocomplete="off" aria-label="Cari barang"></div>
+    <div class="chips mt1" id="tkCats"></div>
+    <div class="prod-grid mt1" id="tkGrid"></div>
+    <div class="text-center mt1" id="tkMore"></div>
+  </div>
+
+  <div data-tk="status" hidden>
+    <div class="card">
+      <h2>Cek status pesanan</h2>
+      <div class="row">
+        <label class="field"><span>No. pesanan</span><input id="tkStId" placeholder="PSN261008-001" autocomplete="off" autocapitalize="characters"></label>
+        <label class="field"><span>Nomor WhatsApp pemesan</span><input id="tkStPhone" inputmode="tel" placeholder="0812…"></label>
+      </div>
+      <button class="btn btn-primary" id="tkStBtn"><i data-icon="search"></i>Cek</button>
+      <div id="tkStOut" class="mt1"></div>
+    </div>
+  </div>
+
+  <div class="shop-bar" id="tkBar" hidden>
+    <button class="btn btn-primary" id="tkBarBtn" type="button">
+      <span><i data-icon="cart"></i> <span class="cb-count" id="tkCount">0 barang</span></span>
+      <span id="tkTotal">Rp 0 · Pesan</span>
+    </button>
+  </div>
+</section>
+<script>
+Pages.toko = {
+  data: null, cart: [], cat: 'Semua', limit: 60, tab: 'belanja',
+  init() {
+    $('#tkTabs').addEventListener('click', (e) => { const b = e.target.closest('[data-tab]'); if (b) this.showTab(b.getAttribute('data-tab')); });
+    $('#tkSearch').addEventListener('input', debounce(() => { this.limit = 60; this.renderGrid(); }, 100));
+    $('#tkCats').addEventListener('click', (e) => {
+      const c = e.target.closest('[data-cat]');
+      if (!c) return;
+      this.cat = c.getAttribute('data-cat'); this.limit = 60;
+      this.renderCats(); this.renderGrid();
+    });
+    $('#tkGrid').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-tk-add]');
+      if (b) this.change(b.getAttribute('data-id'), Number(b.getAttribute('data-tk-add')));
+    });
+    $('#tkMore').addEventListener('click', (e) => { if (e.target.closest('button')) { this.limit += 120; this.renderGrid(); } });
+    $('#tkBarBtn').addEventListener('click', () => this.checkout());
+    $('#tkStBtn').addEventListener('click', () => this.status());
+  },
+  async enter(params) {
+    this.cart = (Store.get('shopcart', []) || []).filter((c) => c && c.product_id && c.qty > 0);
+    const last = Store.get('shoplast', null);
+    if (last && !$('#tkStId').value) { $('#tkStId').value = last.id || ''; $('#tkStPhone').value = last.phone || ''; }
+    if (!this.data) $('#tkGrid').innerHTML = [1, 2, 3, 4, 5, 6].map(() => '<div class="prod">' + skeleton(3) + '</div>').join('');
+    try {
+      this.data = await api('apiShopCatalog');
+      this.byId = {};
+      this.data.products.forEach((p) => { this.byId[p.product_id] = p; p._s = (p.name + ' ' + p.category).toLowerCase(); });
+      this.cart = this.cart.filter((c) => this.byId[c.product_id] && this.byId[c.product_id].available);
+      document.title = 'Toko Online · ' + (this.data.business.name || 'Warung');
+      this.renderHero(); this.renderCats(); this.renderGrid(); this.renderBar();
+    } catch (e) {
+      $('#tkHero').innerHTML = '<div class="notice n-err">' + icon('alert') + '<span>' + esc(e.message) + '</span></div>';
+      $('#tkGrid').innerHTML = '';
+    }
+  },
+  showTab(t) {
+    this.tab = t;
+    $$('#tkTabs button').forEach((b) => b.classList.toggle('on', b.getAttribute('data-tab') === t));
+    $$('#page-toko [data-tk]').forEach((p) => { p.hidden = p.getAttribute('data-tk') !== t; });
+    this.renderBar();
+  },
+  renderHero() {
+    const b = this.data.business;
+    const logo = b.logo ? '<img src="' + esc(b.logo) + '" alt="" class="shop-logo">' : '<span class="shop-logo">' + icon('store') + '</span>';
+    $('#tkHero').innerHTML = '<div class="shop-head">' + logo + '<div style="flex:1;min-width:0"><h1 class="mb0">' + esc(b.name || 'Warung') + '</h1>' +
+      (b.address ? '<div class="small muted">' + esc(b.address) + '</div>' : '') + '</div></div>' +
+      (b.whatsapp ? '<div class="actions mt1"><a class="btn btn-sm btn-wa" target="_blank" rel="noopener" href="' + esc(waLink(b.whatsapp, 'Halo, saya mau tanya')) + '">' + icon('wa') + 'Tanya lewat WhatsApp</a></div>' : '') +
+      (this.data.note ? '<div class="notice n-info mt1">' + icon('truck') + '<span>' + esc(this.data.note) + '</span></div>' : '') +
+      (!this.data.orders ? '<div class="notice n-warn mt1">' + icon('alert') + '<span>Pesan online sedang ditutup. Katalog tetap bisa dilihat; pesan lewat WhatsApp ya.</span></div>' : '');
+  },
+  renderCats() {
+    const have = {};
+    this.data.products.forEach((p) => { have[p.category] = 1; });
+    const cats = ['Semua'].concat(this.data.categories.filter((c) => have[c]));
+    $('#tkCats').innerHTML = cats.map((c) => '<button class="chip ' + (c === this.cat ? 'active' : '') + '" data-cat="' + esc(c) + '">' + esc(c) + '</button>').join('');
+  },
+  qtyOf(id) { const l = this.cart.find((c) => c.product_id === id); return l ? l.qty : 0; },
+  renderGrid() {
+    const q = $('#tkSearch').value.trim().toLowerCase();
+    const words = q.split(/\s+/).filter(Boolean);
+    const list = this.data.products.filter((p) => (this.cat === 'Semua' || p.category === this.cat) && words.every((w) => p._s.indexOf(w) >= 0))
+      .sort((a, b) => (b.available - a.available) || a.name.localeCompare(b.name));
+    if (!list.length) { $('#tkGrid').innerHTML = '<div class="card" style="grid-column:1/-1">' + emptyState('box', 'Barang tidak ditemukan', 'Coba kata lain atau tanya lewat WhatsApp.') + '</div>'; $('#tkMore').innerHTML = ''; return; }
+    const can = this.data.orders;
+    $('#tkGrid').innerHTML = list.slice(0, this.limit).map((p) => {
+      const n = this.qtyOf(p.product_id);
+      const tiers = [];
+      if (p.bundle_qty > 0 && p.price_bundle > 0 && p.price_bundle < p.price_retail) tiers.push(fmtNum(p.bundle_qty) + '+ ' + rp(p.price_bundle));
+      if (p.wholesale_qty > 0 && p.price_wholesale > 0) tiers.push(fmtNum(p.wholesale_qty) + '+ ' + rp(p.price_wholesale));
+      const stockCls = !p.available ? 'b-red' : (p.stock_label === 'Sisa sedikit' ? 'b-yellow' : 'b-green');
+      return '<div class="prod shop-prod' + (p.available ? '' : ' out') + '">' + (n ? '<span class="p-incart">' + esc(fmtNum(n)) + '</span>' : '') +
+        '<div class="p-name">' + esc(p.name) + '</div>' +
+        '<div><span class="price-tag sm">' + esc(rp(p.price_retail)) + '</span><span class="small muted">/' + esc(p.unit) + '</span></div>' +
+        (tiers.length ? '<div class="small" style="color:var(--accent-700);font-weight:800">Hemat: ' + esc(tiers.join(' · ')) + '</div>' : '') +
+        (p.stock_label ? '<div><span class="badge ' + stockCls + '">' + esc(p.stock_label) + '</span></div>' : '') +
+        (can && p.available ? (n
+          ? '<div class="stepper"><button type="button" data-tk-add="-1" data-id="' + esc(p.product_id) + '" aria-label="Kurangi">−</button><input value="' + esc(fmtNum(n)) + '" readonly aria-label="Jumlah"><button type="button" data-tk-add="1" data-id="' + esc(p.product_id) + '" aria-label="Tambah">+</button></div>'
+          : '<button class="btn btn-sm btn-primary" type="button" data-tk-add="1" data-id="' + esc(p.product_id) + '">' + icon('plus') + 'Tambah</button>') : '') +
+        '</div>';
+    }).join('');
+    $('#tkMore').innerHTML = list.length > this.limit ? '<button class="btn">Tampilkan lebih banyak (' + (list.length - this.limit) + ')</button>' : '';
+  },
+  change(id, d) {
+    const p = this.byId[id];
+    if (!p) return;
+    const line = this.cart.find((c) => c.product_id === id);
+    const next = Math.max(0, (line ? line.qty : 0) + d);
+    if (typeof p.stock === 'number' && next > p.stock) { toast('Stok ' + p.name + ' tinggal ' + fmtNum(p.stock) + ' ' + p.unit, 'err'); return; }
+    if (!line && next > 0) this.cart.push({ product_id: id, qty: next });
+    else if (line && next > 0) line.qty = next;
+    else this.cart = this.cart.filter((c) => c.product_id !== id);
+    Store.set('shopcart', this.cart);
+    this.renderGrid(); this.renderBar();
+  },
+  totals() {
+    const lines = this.cart.map((c) => { const p = this.byId[c.product_id]; const u = unitPrice(p, c.qty); return { p: p, qty: c.qty, price: u.price, tier: u.tier, total: Math.round(u.price * c.qty) }; });
+    return { lines: lines, count: lines.reduce((a, l) => a + l.qty, 0), total: lines.reduce((a, l) => a + l.total, 0) };
+  },
+  renderBar() {
+    const t = this.totals();
+    $('#tkBar').hidden = !t.lines.length || this.tab !== 'belanja' || !this.data || !this.data.orders;
+    $('#tkCount').textContent = fmtNum(t.count) + ' barang';
+    $('#tkTotal').textContent = rp(t.total) + ' · Pesan';
+  },
+  checkout() {
+    const t = this.totals();
+    if (!t.lines.length) return;
+    const saved = Store.get('shopbuyer', {}) || {};
+    const m = openModal({
+      title: 'Pesan sekarang',
+      body: '<ul class="list small">' + t.lines.map((l) => '<li><div class="li-main">' + esc(l.p.name) + ' × ' + esc(fmtNum(l.qty)) + (l.tier !== 'Eceran' ? ' <span class="badge b-green">' + esc(l.tier) + '</span>' : '') + '</div><span class="num">' + esc(rp(l.total)) + '</span></li>').join('') + '</ul>' +
+        '<div class="cart-total"><span>Perkiraan total</span><span class="num">' + esc(rp(t.total)) + '</span></div>' +
+        '<label class="field"><span>Nama</span><input id="tkName" maxlength="40" autocomplete="name" value="' + esc(saved.name || '') + '"></label>' +
+        '<label class="field"><span>Nomor WhatsApp</span><input id="tkPhone" inputmode="tel" autocomplete="tel" placeholder="0812…" value="' + esc(saved.phone || '') + '"></label>' +
+        '<div class="field"><span>Pengambilan</span><div class="chips"><button type="button" class="chip active" data-dl="Ambil">Ambil di warung</button><button type="button" class="chip" data-dl="Antar">Diantar</button></div></div>' +
+        '<label class="field" id="tkAddrWrap" hidden><span>Alamat antar</span><input id="tkAddr" maxlength="160" autocomplete="street-address" value="' + esc(saved.address || '') + '"></label>' +
+        '<label class="field"><span>Catatan (opsional)</span><input id="tkNote" maxlength="200" placeholder="mis. telur yang besar"></label>' +
+        '<label class="hp-field" aria-hidden="true">Website<input id="tkWeb" tabindex="-1" autocomplete="off"></label>' +
+        '<p class="small muted">Harga final dikonfirmasi warung. Pesanan bisa dicek di tab "Cek pesanan".</p>',
+      foot: '<button class="btn" data-close>Batal</button><button class="btn btn-primary" id="tkSend">' + icon('check') + 'Kirim pesanan</button>'
+    });
+    let delivery = 'Ambil';
+    m.el.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-dl]');
+      if (!b) return;
+      delivery = b.getAttribute('data-dl');
+      $$('[data-dl]', m.el).forEach((x) => x.classList.toggle('active', x === b));
+      $('#tkAddrWrap', m.el).hidden = delivery !== 'Antar';
+    });
+    $('#tkSend', m.el).addEventListener('click', async () => {
+      const payload = {
+        name: $('#tkName', m.el).value, phone: $('#tkPhone', m.el).value, delivery: delivery, address: $('#tkAddr', m.el).value,
+        note: $('#tkNote', m.el).value, website: $('#tkWeb', m.el).value,
+        items: this.cart.map((c) => ({ product_id: c.product_id, qty: c.qty }))
+      };
+      const btn = $('#tkSend', m.el);
+      btn.disabled = true;
+      try {
+        const r = await withBusy('Mengirim pesanan…', () => api('apiShopOrder', payload));
+        Store.set('shopbuyer', { name: payload.name, phone: payload.phone, address: payload.address });
+        Store.set('shoplast', { id: r.order_id, phone: payload.phone });
+        this.cart = []; Store.set('shopcart', []);
+        m.close();
+        this.renderGrid(); this.renderBar();
+        this.success(r, payload);
+      } catch (e) { btn.disabled = false; }
+    });
+  },
+  success(r, payload) {
+    const biz = this.data.business;
+    const text = 'Halo ' + (biz.name || '') + ', saya ' + payload.name + ' sudah pesan online.\nNo. pesanan: ' + r.order_id + '\n' +
+      r.items.map((i) => '- ' + i.name + ' x ' + fmtNum(i.qty)).join('\n') + '\nPerkiraan total: ' + rp(r.total) + '\n' +
+      (r.delivery === 'Antar' ? 'Mohon diantar ke: ' + payload.address : 'Saya ambil di warung.');
+    const m = openModal({
+      title: 'Pesanan terkirim',
+      body: '<div class="success-burst"><div class="check">' + icon('check') + '</div><div class="muted">No. pesanan</div><div class="big-total">' + esc(r.order_id) + '</div>' +
+        '<p>Perkiraan total <b>' + esc(rp(r.total)) + '</b></p></div>' +
+        ((r.shortStock || []).length ? '<div class="notice n-warn">' + icon('alert') + '<span>Stok mungkin kurang: ' + esc(r.shortStock.join(', ')) + '. Warung akan mengonfirmasi.</span></div>' : '') +
+        '<p class="small muted">Simpan nomor pesanan ini. Agar cepat diproses, kirim konfirmasi ke WhatsApp warung.</p>',
+      foot: (r.whatsapp ? '<a class="btn btn-wa" target="_blank" rel="noopener" href="' + esc(waLink(r.whatsapp, text)) + '">' + icon('wa') + 'Konfirmasi via WhatsApp</a>' : '') + '<button class="btn" data-close>Tutup</button>',
+      noFocus: true
+    });
+    $('#tkStId').value = r.order_id; $('#tkStPhone').value = payload.phone;
+    return m;
+  },
+  async status() {
+    const id = $('#tkStId').value.trim().toUpperCase(), phone = $('#tkStPhone').value.trim();
+    if (!id || !phone) { toast('Isi nomor pesanan dan nomor WhatsApp', 'err'); return; }
+    $('#tkStOut').innerHTML = skeleton(3);
+    try {
+      const r = await api('apiShopStatus', id, phone);
+      const label = { Baru: ['b-yellow', 'Menunggu dicek warung'], Diproses: ['b-orange', 'Sedang disiapkan'], Selesai: ['b-green', 'Selesai'], Batal: ['b-red', 'Dibatalkan'] }[r.status] || ['b-gray', r.status];
+      $('#tkStOut').innerHTML = '<div class="card-head"><b>' + esc(r.order_id) + '</b><span class="badge ' + label[0] + '">' + esc(label[1]) + '</span></div>' +
+        '<ul class="list small">' + r.items.map((i) => '<li><div class="li-main">' + esc(i.name) + ' × ' + esc(fmtNum(i.qty)) + '</div><span class="num">' + esc(rp(i.subtotal)) + '</span></li>').join('') + '</ul>' +
+        '<div class="cart-total"><span>Total</span><span class="num">' + esc(rp(r.total)) + '</span></div>' +
+        '<p class="small muted">Dipesan ' + esc(fmtDateTime(r.datetime)) + (r.trx_id ? ' · transaksi ' + esc(r.trx_id) : '') + '</p>';
+    } catch (e) { $('#tkStOut').innerHTML = '<div class="notice n-err">' + esc(e.message) + '</div>'; }
+  }
+};
+</script>

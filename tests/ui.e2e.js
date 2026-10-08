@@ -33,7 +33,7 @@ async function main() {
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
   const results = [];
 
-  async function newPage(viewport) {
+  async function newPage(viewport, params) {
     const ctx = await browser.newContext(viewport);
     const page = await ctx.newPage();
     await page.exposeFunction('__gasCall', (fn, argsJson) => {
@@ -49,7 +49,7 @@ async function main() {
     page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push('console: ' + m.text()); });
     page.on('dialog', (d) => d.dismiss());
     // setContent() does not run init scripts on about:blank, so inject the shim into <head>.
-    const html = gas.call('doGet', { parameter: {} }).getContent().replace('<head>', '<head><script>' + SHIM + '</script>');
+    const html = gas.call('doGet', { parameter: params || {} }).getContent().replace('<head>', '<head><script>' + SHIM + '</script>');
     await page.setContent(html, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#bootSplash', { state: 'detached' });
     return page;
@@ -189,6 +189,21 @@ async function main() {
   const outbox = gas.post({ kw: 'wa', secret, action: 'poll' }).outbox;
   if (!outbox.some((m) => /selesai/.test(m.text))) errors.push('no thank-you notification: ' + JSON.stringify(outbox));
 
+  // ---------------- Akses publik: settings + API key ----------------
+  await page.evaluate(() => App.go('pengaturan'));
+  await page.click('#stTabs [data-tab="publik"]');
+  await page.waitForSelector('#pbShopLink .notice');
+  await page.fill('#pbKeyName', 'Website warung');
+  await page.selectOption('#pbKeyAccess', 'baca');
+  await page.click('#pbKeyNew');
+  await page.waitForSelector('#pbKeyVal');
+  const apiKey = await page.inputValue('#pbKeyVal');
+  const viaKey = gas.apiGet({ api: 'produk', key: apiKey }).json();
+  if (!viaKey.ok || !viaKey.data.length) errors.push('API key from the settings page does not work: ' + JSON.stringify(viaKey).slice(0, 200));
+  await page.waitForSelector('#pbKeys [data-revoke]');
+  await shot(page, '14f-akses-publik-phone');
+  await noHScroll(page, 'akses publik');
+
   // ---------------- Kasir role ----------------
   const kp = await newPage({ ...phone });
   await kp.fill('#loginUser', 'kasir');
@@ -206,6 +221,36 @@ async function main() {
   await kp.evaluate(() => App.go('pesanan'));
   await kp.waitForSelector('#poList .card');
   if (await kp.evaluate(() => App.page) !== 'pesanan') errors.push('kasir cannot open Pesanan WA');
+
+  // ---------------- Public shop, anonymous visitor ----------------
+  const sp = await newPage({ ...phone }, { page: 'toko' });
+  await sp.waitForSelector('#page-toko:not([hidden]) .shop-prod [data-tk-add]');
+  await shot(sp, '23-toko-phone');
+  await noHScroll(sp, 'toko');
+  await sp.fill('#tkSearch', 'indomie');
+  await sp.waitForFunction(() => [...document.querySelectorAll('#tkGrid .p-name')].every((n) => /Indomie/.test(n.textContent)));
+  await sp.click('#tkGrid [data-tk-add="1"]');
+  for (let i = 0; i < 4; i++) await sp.click('#tkGrid [data-tk-add="1"]');
+  await sp.fill('#tkSearch', '');
+  await sp.click('#tkBarBtn');
+  await sp.fill('#tkName', 'Rina');
+  await sp.fill('#tkPhone', '085712345678');
+  await sp.click('[data-dl="Antar"]');
+  await sp.fill('#tkAddr', 'Jl. Mawar 3');
+  await shot(sp, '24-toko-checkout-phone');
+  await sp.click('#tkSend');
+  await sp.waitForSelector('.success-burst');
+  await shot(sp, '25-toko-sukses-phone');
+  const shopRow = gas.rows('WaOrders').pop();
+  if (shopRow.chat_name !== 'Toko online' || shopRow.total !== 5 * 3300) errors.push('shop order wrong: ' + JSON.stringify(shopRow));
+  await sp.click('.modal-foot [data-close]');
+  await sp.click('#tkTabs [data-tab="status"]');
+  await sp.click('#tkStBtn');
+  await sp.waitForSelector('#tkStOut .badge');
+  if ((await sp.textContent('#tkStOut')).indexOf('Menunggu') < 0) errors.push('shop status not shown');
+  await shot(sp, '26-toko-status-phone');
+  const navAnon = await sp.$$eval('#bottomnav [data-go]', (b) => b.length);
+  if (navAnon) errors.push('anonymous shop visitor sees app navigation');
 
   // ---------------- Desktop ----------------
   const dp = await newPage({ viewport: { width: 1366, height: 860 } });

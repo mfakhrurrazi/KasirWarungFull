@@ -9,6 +9,7 @@
     <button data-tab="profil" class="on">Profil</button>
     <button data-tab="ai">AI</button>
     <button data-tab="wa">Bot WhatsApp</button>
+    <button data-tab="publik">Akses Publik</button>
     <button data-tab="users">Pengguna</button>
     <button data-tab="data">Data &amp; Backup</button>
     <button data-tab="log">Log aktivitas</button>
@@ -79,6 +80,32 @@
     </div>
   </div>
 
+  <div data-panel="publik" hidden>
+    <div class="card">
+      <h2>Toko online (tanpa login)</h2>
+      <p class="small muted">Siapa pun bisa melihat katalog &amp; harga, memesan, dan cek status pesanan. Harga modal, stok persis (kecuali diizinkan), kasbon dan laporan <b>tidak</b> pernah tampil.</p>
+      <div id="pbShopLink"></div>
+      <label class="switch"><span>Toko online dibuka</span><input type="checkbox" id="pbShop"></label>
+      <label class="switch"><span>Terima pesanan online<br><small class="muted">Masuk ke menu Pesanan WA (sumber "Toko online"). Maks 5 pesanan/jam per nomor.</small></span><input type="checkbox" id="pbOrders"></label>
+      <label class="field"><span>Tampilkan stok</span><select id="pbStock"><option value="status">Tersedia / Sisa sedikit / Habis</option><option value="angka">Jumlah stok (angka)</option><option value="sembunyi">Jangan tampilkan</option></select></label>
+      <label class="field"><span>Catatan di toko (ongkir, jam buka, minimal belanja)</span><input id="pbNote" maxlength="200" placeholder="mis. Antar gratis radius 1 km, min. Rp 50.000"></label>
+      <label class="switch"><span>API untuk aplikasi lain (pakai kunci)</span><input type="checkbox" id="pbApi"></label>
+      <button class="btn btn-primary" id="pbSave"><i data-icon="check"></i>Simpan akses publik</button>
+    </div>
+    <div class="card mt2">
+      <div class="card-head"><h2>Kunci API</h2></div>
+      <p class="small muted">Untuk website, n8n, Zapier, Google Sheets, aplikasi lain. Kunci hanya tampil sekali saat dibuat; yang tersimpan hanya sidik (hash)-nya. Cabut kapan saja.</p>
+      <div id="pbKeys"></div>
+      <div class="row mt1">
+        <label class="field"><span>Nama kunci</span><input id="pbKeyName" maxlength="40" placeholder="mis. Website warung"></label>
+        <label class="field"><span>Hak akses</span><select id="pbKeyAccess"></select></label>
+      </div>
+      <button class="btn btn-yellow" id="pbKeyNew"><i data-icon="key"></i>Buat kunci API</button>
+      <div id="pbKeyOut" class="mt1"></div>
+      <div id="pbDocs" class="mt2 small"></div>
+    </div>
+  </div>
+
   <div data-panel="users" hidden class="card">
     <div class="card-head"><h2>Pengguna</h2><button class="btn btn-sm btn-primary" id="usAdd"><i data-icon="plus"></i>Tambah kasir</button></div>
     <div id="usList"></div>
@@ -134,6 +161,9 @@ Pages.pengaturan = {
     $('#waReload').addEventListener('click', () => this.loadWa());
     $('#waSave').addEventListener('click', () => this.saveWa());
     $('#waSecret').addEventListener('click', () => this.newWaSecret());
+    $('#pbSave').addEventListener('click', () => this.savePublic());
+    $('#pbKeyNew').addEventListener('click', () => this.newApiKey());
+    $('#pbKeys').addEventListener('click', (e) => { const b = e.target.closest('[data-revoke]'); if (b) this.revokeKey(b.getAttribute('data-revoke'), b.getAttribute('data-label')); });
   },
   async enter() {
     this.showTab(this.tab);
@@ -162,6 +192,7 @@ Pages.pengaturan = {
     if (t === 'users') this.loadUsers();
     if (t === 'log') this.logs();
     if (t === 'wa') this.loadWa();
+    if (t === 'publik') this.loadPublic();
   },
   applySettings(s) {
     App.settings = Object.assign({}, App.settings, s);
@@ -193,6 +224,59 @@ Pages.pengaturan = {
       this.applySettings(s);
       toast('AI ' + (s.AI_ENABLED ? 'diaktifkan' : 'dimatikan'), 'ok');
     } catch (e) { $('#aiToggle').checked = !$('#aiToggle').checked; }
+  },
+  copyText(text) {
+    try { navigator.clipboard.writeText(text); toast('Disalin', 'ok'); } catch (e) { toast('Salin manual: ' + text); }
+  },
+  async loadPublic() {
+    $('#pbKeys').innerHTML = skeleton(2);
+    try {
+      const d = await api('apiPublicGetConfig');
+      this.pub = d;
+      const c = d.config;
+      const shopUrl = (d.url || '') + '?page=toko';
+      $('#pbShopLink').innerHTML = '<div class="notice n-info" style="align-items:center">' + icon('store') + '<span style="flex:1;word-break:break-all">' + esc(shopUrl) + '</span>' +
+        '<button class="btn btn-sm" id="pbCopyShop">Salin</button><a class="btn btn-sm" target="_blank" rel="noopener" href="' + esc(shopUrl) + '">Buka</a></div>';
+      $('#pbCopyShop').addEventListener('click', () => this.copyText(shopUrl));
+      $('#pbShop').checked = c.shop; $('#pbOrders').checked = c.shopOrders; $('#pbStock').value = c.shopStock; $('#pbNote').value = c.shopNote || ''; $('#pbApi').checked = c.api;
+      $('#pbKeyAccess').innerHTML = d.access.map((a) => '<option value="' + esc(a.id) + '">' + esc(a.label) + '</option>').join('');
+      this.renderKeys(d.keys);
+      const base = d.url || '<URL>';
+      $('#pbDocs').innerHTML = '<h3>Parameter</h3><ul class="list"><li><div class="li-main">Daftar semua aksi &amp; parameter</div><a target="_blank" rel="noopener" href="' + esc(base + '?api=bantuan') + '">?api=bantuan</a></li></ul>' +
+        '<pre class="code-block">GET  ' + esc(base) + '?api=produk&amp;key=KUNCI\n' +
+        'POST ' + esc(base) + '\n     body: {"api":"jual","key":"KUNCI","items":[{"product_id":"PRD…","qty":2}],"method":"Tunai","paid":20000}\n' +
+        'Toko (tanpa kunci): ?api=toko_katalog · POST {"api":"toko_pesan",…} · ?api=toko_status&amp;order_id=…&amp;phone=…</pre>' +
+        '<p class="muted">Panduan lengkap: <b>docs/API.md</b> (folder Source Code). Kirim POST dengan Content-Type <span class="kbd">text/plain</span> agar bisa dipanggil langsung dari browser.</p>';
+    } catch (e) { $('#pbKeys').innerHTML = '<div class="notice n-err">' + esc(e.message) + '</div>'; }
+  },
+  renderKeys(keys) {
+    $('#pbKeys').innerHTML = keys.length
+      ? '<ul class="list">' + keys.map((k) => '<li><div class="li-main"><b>' + esc(k.label) + '</b><div class="small muted">' + esc(k.prefix) + ' · ' + esc(k.accessLabel) +
+        ' · ' + (k.lastUsed ? 'dipakai ' + esc(fmtDateTime(k.lastUsed)) : 'belum dipakai') + '</div></div>' +
+        '<button class="btn btn-sm btn-ghost" data-revoke="' + esc(k.id) + '" data-label="' + esc(k.label) + '">Cabut</button></li>').join('') + '</ul>'
+      : '<p class="muted small">Belum ada kunci API.</p>';
+  },
+  async savePublic() {
+    const payload = { shop: $('#pbShop').checked, shopOrders: $('#pbOrders').checked, shopStock: $('#pbStock').value, shopNote: $('#pbNote').value, api: $('#pbApi').checked };
+    try { await withBusy('Menyimpan…', () => api('apiPublicSaveConfig', payload)); toast('Akses publik tersimpan', 'ok'); } catch (e) { /* toast */ }
+  },
+  async newApiKey() {
+    const label = $('#pbKeyName').value.trim();
+    if (!label) { toast('Isi nama kunci dulu', 'err'); return; }
+    try {
+      const r = await withBusy('Membuat kunci…', () => api('apiPublicNewKey', label, $('#pbKeyAccess').value));
+      $('#pbKeyName').value = '';
+      $('#pbKeyOut').innerHTML = '<div class="notice n-warn">' + icon('shield') + '<span>Kunci untuk <b>' + esc(r.item.label) + '</b> (' + esc(r.item.accessLabel) + ') hanya ditampilkan <b>sekali</b>. Simpan di tempat aman.</span></div>' +
+        '<textarea id="pbKeyVal" rows="2" readonly style="font-family:monospace">' + esc(r.key) + '</textarea>' +
+        '<div class="actions mt1"><button class="btn btn-sm" id="pbKeyCopy">' + icon('file') + 'Salin kunci</button>' +
+        '<a class="btn btn-sm" target="_blank" rel="noopener" href="' + esc(r.url + '?api=produk&key=' + r.key) + '">Coba: daftar produk</a></div>';
+      $('#pbKeyCopy').addEventListener('click', () => this.copyText(r.key));
+      this.loadPublic();
+    } catch (e) { /* toast */ }
+  },
+  async revokeKey(id, label) {
+    if (!(await confirmBox({ title: 'Cabut kunci API?', message: 'Aplikasi yang memakai kunci "' + label + '" langsung tidak bisa mengakses data.', okText: 'Cabut', danger: true }))) return;
+    try { const r = await withBusy('Mencabut…', () => api('apiPublicRevokeKey', id)); this.renderKeys(r.keys); toast('Kunci dicabut', 'ok'); } catch (e) { /* toast */ }
   },
   async loadWa() {
     $('#waState').innerHTML = skeleton(2);

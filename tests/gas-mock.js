@@ -12,7 +12,7 @@ const path = require('path');
 const vm = require('vm');
 
 const SRC = path.join(__dirname, '..', 'src');
-const GS_ORDER = ['Data.gs', 'Setup.gs', 'Code.gs', 'Reports.gs', 'AI.gs', 'WhatsApp.gs', 'TemplateData.gs'];
+const GS_ORDER = ['Data.gs', 'Setup.gs', 'Code.gs', 'Reports.gs', 'AI.gs', 'WhatsApp.gs', 'PublicApi.gs', 'TemplateData.gs'];
 const DIST = path.join(__dirname, '..', 'dist');
 const BUNDLE_FILES = ['KasirWarung_1_Server.gs', 'KasirWarung_2_Tampilan.gs'];
 
@@ -339,7 +339,7 @@ function createGas(options) {
     },
     MimeType: { GOOGLE_SHEETS: 'application/vnd.google-apps.spreadsheet' },
     ContentService: {
-      MimeType: { JSON: 'application/json', TEXT: 'text/plain' },
+      MimeType: { JSON: 'application/json', TEXT: 'text/plain', JAVASCRIPT: 'application/javascript' },
       createTextOutput: (text) => {
         const o = { text: String(text), mime: 'text/plain', getContent: () => o.text, setMimeType: (m) => { o.mime = m; return o; } };
         return o;
@@ -396,6 +396,12 @@ function createGas(options) {
     },
     /** POST to the web app like the WhatsApp bot does; returns the parsed JSON. */
     post: (body) => JSON.parse(gas.call('doPost', { postData: { contents: JSON.stringify(body), type: 'application/json' } }).getContent()),
+    /** Public API like an outside app: GET ?api=… (params) or POST (JSON body). Returns parsed JSON. */
+    apiGet: (params) => {
+      const out = gas.call('doGet', { parameter: Object.fromEntries(Object.entries(params).map(([k, v]) => [k, typeof v === 'object' ? JSON.stringify(v) : String(v)])) });
+      return { body: out.getContent(), mime: out.mime, json: () => JSON.parse(out.getContent()) };
+    },
+    apiPost: (body, params) => JSON.parse(gas.call('doPost', { parameter: params || {}, postData: { contents: JSON.stringify(body), type: 'text/plain' } }).getContent()),
     ss: () => state.spreadsheets.get(state.props.get('SPREADSHEET_ID')),
     sheet: (name) => gas.ss().getSheetByName(name),
     rows: (name) => gas.sheet(name).rowsAsObjects(),

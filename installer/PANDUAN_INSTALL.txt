@@ -77,6 +77,14 @@ LANGKAH 9 — (Opsional) Bot WhatsApp: CS grup & pesanan via WA (gratis)
   4. Masukkan nomor bot ke grup pelanggan. Pesanan masuk ke menu "Pesanan WA".
 
 
+LANGKAH 10 — (Opsional) Akses publik: toko online & API
+  • Toko online (tanpa login): Pengaturan → Akses Publik → salin link  …/exec?page=toko  → bagikan ke pelanggan.
+    Pesanan masuk ke menu "Pesanan WA" (sumber: Toko online).
+  • API untuk aplikasi lain: Pengaturan → Akses Publik → "Buat kunci API" (Baca saja / Kasir / Owner).
+    Panggil  …/exec?api=produk&key=KUNCI . Daftar semua aksi & parameter:  …/exec?api=bantuan
+    Panduan lengkap: file "PANDUAN_API.md" di folder ini.
+
+
 MEMPERBARUI VERSI
   Ganti isi Code.gs dan Tampilan dengan file versi baru → Ctrl+S →
   Deploy → Manage deployments → ✎ Edit → Version: New version → Deploy. URL tetap sama.
